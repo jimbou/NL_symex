@@ -125,7 +125,49 @@ We assume a function `get_model(model_type, temperature, log_dir)` defined in `m
 response = model.query(prompt)
 ```
 
----
+
+### 1. Rewriting to SMT Constraints (Strategy I)
+
+We now support translating the NL block directly into **SMT-LIBv2 constraints** using an LLM, enabling integration with symbolic solvers like KLEE.
+
+- The LLM receives the original function, the NL block, and optionally pre/postconditions.
+- It generates a block of SMT constraints wrapped in:
+
+```
+
+SMT\_START
+(set-logic QF\_AUFBV)
+(declare-fun ...)
+(assert ...)
+(check-sat)
+(exit)
+SMT\_END
+
+```
+
+- Output is saved to `nl_block.smt2` for direct use in SMT-based reasoning.
+
+### 2. Rewriting to Executable C Code (Strategy II)
+
+We also support rewriting the NL code block into **concrete C code** that mimics its intended functionality while remaining easy for symbolic execution engines to analyze.
+
+- The LLM is prompted to produce compilable C code that avoids:
+  - Dynamic allocation
+  - External libraries
+  - Recursion or complex control flow
+
+- The result is wrapped in:
+
+```
+
+C\_REWRITE\_START <rewritten C code>
+C\_REWRITE\_END
+
+````
+
+- The replacement is inserted in place of the NL block to produce `rewritten.c`.
+
+
 
 ##  License
 

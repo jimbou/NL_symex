@@ -5,6 +5,8 @@ import re
 from get_minimal import get_minimal
 import argparse
 from model import get_model
+from translate_to_smt import get_smt_constraints
+from replace import rewrite_and_replace
 
 
 def create_log_folders_and_models(log_folder,model_name):
@@ -16,7 +18,28 @@ def create_log_folders_and_models(log_folder,model_name):
         print(f"[INFO] Using existing log folder: {log_folder_total}")
     #create the model
     model_total = get_model(model_name, 0.5, log_folder_total)
-    return model_total, log_folder_total
+
+    log_folder_smt = os.path.join(log_folder, "smt_vars")
+    if not os.path.exists(log_folder_smt):
+        os.makedirs(log_folder_smt)
+        print(f"[INFO] Created log folder: {log_folder_smt}")
+    else:
+        print(f"[INFO] Using existing log folder: {log_folder_smt}")
+    #create the model
+    model_smt = get_model(model_name, 0.5, log_folder_smt)
+    print(f"[INFO] Using model: {model_name} with temperature 0.5")
+
+    log_folder_replace = os.path.join(log_folder, "replace_NL")
+    if not os.path.exists(log_folder_replace):
+        os.makedirs(log_folder_replace)
+        print(f"[INFO] Created log folder: {log_folder_replace}")
+    else:
+        print(f"[INFO] Using existing log folder: {log_folder_replace}")
+    #create the model
+    model_replace = get_model(model_name, 0.5, log_folder_replace)
+    print(f"[INFO] Using model: {model_name} with temperature 0.5 for replacement")
+
+    return model_total, log_folder_total, model_smt, log_folder_smt, model_replace, log_folder_replace
 
 def extract_blocks(c_code: str):
     start_marker = "assume_NL_start;"
@@ -101,7 +124,7 @@ def main():
         shutil.rmtree(log_folder)
     os.makedirs(log_folder)
 
-    model, model_folder= create_log_folders_and_models(f"{log_folder}/get_minimal" , model_name)
+    model, model_folder, model_smt, log_folder_smt, model_replace, log_folder_replace = create_log_folders_and_models(f"{log_folder}/get_minimal" , model_name)
 
     with open(c_script_path, 'r') as f:
         c_code = f.read()
@@ -123,5 +146,20 @@ def main():
 
     replacement = get_minimal(model, clean_code, nl_code)
     apply_replacement_and_save(c_code, replacement, '{log_folder}/minimal.c')
+
+    prefix_constraints = f"tbf\n"
+    post_constraints = f"tbf\n"
+
+    smt_translation = get_smt_constraints(model_smt, c_code, nl_code, prefix_constraints, post_constraints)
+
+    with open(os.path.join(log_folder, "nl_block.smt2"), 'w') as f:
+        f.write(smt_translation)
+
+    rewritten_code = rewrite_and_replace(model_replace, c_code, nl_code)
+
+    with open(os.path.join(log_folder, "nl_block_rewritten.c"), 'w') as f:
+        f.write(rewritten_code)
+
+
 if __name__ == "__main__":
     main()

@@ -7,6 +7,7 @@ import argparse
 from model import get_model
 from translate_to_smt import get_smt_constraints
 from replace import rewrite_and_replace
+from replace_mad import debate_rewrite
 
 
 def create_log_folders_and_models(log_folder,model_name):
@@ -101,7 +102,9 @@ def main():
                         help='Path to log folder (optional, default: log_temp)')
     parser.add_argument('--model', required=False, default='deepseek-v3-aliyun',
                         help='Model to use (optional, default: deepseek-v3-aliyun)')
-    
+    parser.add_argument('--mad', required=False, default=True,
+                        help='Should we use multi agent debate? (optional, default: True)')
+
     args = parser.parse_args()
     if args.model:
         model_name = args.model
@@ -115,16 +118,20 @@ def main():
         log_folder = 'log_temp'
 
     c_script_path = args.c_code
-    
-   
 
     
+    if args.mad == 'True' or args.mad == 'true' or args.mad == '1' or args.mad == 'yes' or args.mad == True:
+        print("[INFO] Using multi-agent debate mode")
+        mad= True
+    else:
+        print("[INFO] Not using multi-agent debate mode")
+        mad= False
     # Ensure clean log folder
     if os.path.exists(log_folder):
         shutil.rmtree(log_folder)
     os.makedirs(log_folder)
 
-    model, model_folder, model_smt, log_folder_smt, model_replace, log_folder_replace = create_log_folders_and_models(f"{log_folder}/get_minimal" , model_name)
+    model, model_folder, model_smt, log_folder_smt, model_replace, log_folder_replace = create_log_folders_and_models(f"{log_folder}/llm_calls" , model_name)
 
     with open(c_script_path, 'r') as f:
         c_code = f.read()
@@ -145,7 +152,7 @@ def main():
     clean_code = clean_code.replace('assume_NL_start;', '').replace('assume_NL_stop;', '').strip()
 
     replacement = get_minimal(model, clean_code, nl_code)
-    apply_replacement_and_save(c_code, replacement, '{log_folder}/minimal.c')
+    apply_replacement_and_save(c_code, replacement, f'{log_folder}/minimal.c')
 
     prefix_constraints = f"tbf\n"
     post_constraints = f"tbf\n"
@@ -155,7 +162,11 @@ def main():
     with open(os.path.join(log_folder, "nl_block.smt2"), 'w') as f:
         f.write(smt_translation)
 
-    rewritten_code = rewrite_and_replace(model_replace, c_code, nl_code)
+    if mad:
+        print("[INFO] Using multi-agent debate for rewriting")
+        rewritten_code = debate_rewrite(model_replace, c_code, nl_code)
+    else:
+        rewritten_code = rewrite_and_replace(model_replace, c_code, nl_code)
 
     with open(os.path.join(log_folder, "nl_block_rewritten.c"), 'w') as f:
         f.write(rewritten_code)

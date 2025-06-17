@@ -8,7 +8,28 @@ from model import get_model
 from translate_to_smt import get_smt_constraints
 from replace import rewrite_and_replace
 from replace_mad import debate_rewrite
+from  prepare_klee import create_klee_main
 
+
+
+import subprocess
+import os
+
+def run_klee_docker(log_folder: str, file1_path: str, file2_path: str):
+    script_path = os.path.join(os.getcwd(), "run_klee.sh")
+
+    result = subprocess.run(
+        ["bash", script_path, log_folder, file1_path, file2_path],
+        capture_output=True,
+        text=True
+    )
+
+    if result.returncode != 0:
+        print("[ERROR] Script failed:")
+        print(result.stderr)
+    else:
+        print("[✓] KLEE run completed")
+        print(result.stdout)
 
 def create_log_folders_and_models(log_folder,model_name):
     log_folder_total= os.path.join(log_folder, "total_vars")
@@ -40,7 +61,27 @@ def create_log_folders_and_models(log_folder,model_name):
     model_replace = get_model(model_name, 0.5, log_folder_replace)
     print(f"[INFO] Using model: {model_name} with temperature 0.5 for replacement")
 
-    return model_total, log_folder_total, model_smt, log_folder_smt, model_replace, log_folder_replace
+    log_folder_klee = os.path.join(log_folder, "klee")
+    if not os.path.exists(log_folder_klee):
+        os.makedirs(log_folder_klee)
+        print(f"[INFO] Created log folder: {log_folder_klee}")
+    else:
+        print(f"[INFO] Using existing log folder: {log_folder_klee}")
+
+    # i want log_folder klee results to be created in the parent dir of log_folder
+    log_folder_klee_results = os.path.join(os.path.dirname(log_folder), "klee_results")
+    # log_folder_klee_results = os.path.join(log_folder, "klee_results")
+    if not os.path.exists(log_folder_klee_results):
+        os.makedirs(log_folder_klee_results)
+        print(f"[INFO] Created log folder: {log_folder_klee_results}")
+    else:
+        print(f"[INFO] Using existing log folder: {log_folder_klee_results}")
+
+    #create the model
+    model_klee = get_model(model_name, 0.5, log_folder_klee)
+    print(f"[INFO] Using model: {model_name} with temperature 0.5 for KLEE")
+
+    return model_total, log_folder_total, model_smt, log_folder_smt, model_replace, log_folder_replace, model_klee, log_folder_klee, log_folder_klee_results
 
 def extract_blocks(c_code: str):
     start_marker = "assume_NL_start;"
@@ -131,10 +172,13 @@ def main():
         shutil.rmtree(log_folder)
     os.makedirs(log_folder)
 
-    model, model_folder, model_smt, log_folder_smt, model_replace, log_folder_replace = create_log_folders_and_models(f"{log_folder}/llm_calls" , model_name)
+    model, model_folder, model_smt, log_folder_smt, model_replace, log_folder_replace, model_klee, log_folder_klee, log_folder_klee_results = create_log_folders_and_models(f"{log_folder}/llm_calls" , model_name)
 
     with open(c_script_path, 'r') as f:
         c_code = f.read()
+    #remove #include "assume.h" if it exists
+    c_code = c_code.replace('#include "assume.h"', '').strip()
+
 
     prefix, nl_code, _ = extract_blocks(c_code)
     prefix_compilable = make_prefix_compilable(prefix)
@@ -148,12 +192,33 @@ def main():
 
     print(f"[✓] Written prefix.c and nl_block.c to {log_folder}/")
 
-    clean_code = c_code.replace('#include "assume.h"', '')
+    # clean_code = c_code.replace('#include "assume.h"', '')
     clean_code = clean_code.replace('assume_NL_start;', '').replace('assume_NL_stop;', '').strip()
 
     replacement = get_minimal(model, clean_code, nl_code)
     apply_replacement_and_save(c_code, replacement, f'{log_folder}/minimal.c')
 
+    #read from the file
+    with open(os.path.join(log_folder, "minimal.c"), 'r') as f:
+        minimal_code = f.read()
+    print(f"[✓] Minimal code generated and saved to {log_folder}/minimal.c")
+
+    klee_original_code, klee_main_code = create_klee_main(model_klee, minimal_code)
+    with open(os.path.join(log_folder, "klee_main.c"), 'w') as f:
+        f.write(klee_original_code)
+    print(f"[✓] KLEE main function generated and saved to {log_folder}/klee_main.c")
+    with open(os.path.join(log_folder, "klee_main_only.c"), 'w') as f:
+        f.write(klee_main_code)
+    print(f"[✓] KLEE main function code extracted and saved to {log_folder}/klee_main_only.c")
+
+    klee_prefix_code = "#include <klee/klee.h>\n\n" + prefix_compilable.strip() + "\n\n" + klee_main_code
+    with open(os.path.join(log_folder, "klee_prefix.c"), 'w') as f:
+        f.write(klee_prefix_code)
+    print(f"[✓] KLEE prefix code generated and saved to {log_folder}/klee_prefix.c")
+    
+    run_klee_docker(log_folder_klee_results,f'{log_folder}/klee_main.c', f'{log_folder}/klee_prefix.c')
+
+    return
     prefix_constraints = f"tbf\n"
     post_constraints = f"tbf\n"
 

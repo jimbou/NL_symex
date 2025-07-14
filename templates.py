@@ -1018,6 +1018,214 @@ category_prompt_dict = {
     17: pointer_aliasing_explicit
 }
 
+universal_rewrite_prompt = """
+You’re a C/KLEE expert. Real‐world C often trips symbolic executors because of:
+
+  • Hidden/implicit inputs: getpid(), getenv(), rand(), file reads, syscalls  
+  • Covert flows: writing to disk, shell calls, IPC  
+  • Buffer overflows: unchecked strcpy/memcpy  
+  • Indirect memory: symbolic indices, pointers, func‐pointer jumps  
+  • External ops: math libs (sin, sqrt), crypto (SHA1, AES), inline‐asm  
+  • Unbounded loops: while/for with symbolic bounds  
+  • Concurrency/interrupts: threads, signals, IRQs  
+  • OS deps: stat(), open(), read(), execve()  
+  • Pointer aliasing: multiple names for same address  
+  • Floating/overflow: float rounding, integer wraparound  
+
+And the **usual remedies** in KLEE‐friendly code:
+
+  ‣ Declare inputs symbolic via `klee_make_symbolic` + constrain with `klee_assume`  
+  ‣ Eliminate file/shell/IPC hand‐offs—keep data in memory  
+  ‣ Add `klee_assert` to expose buffer overflows  
+  ‣ Expand symbolic indices into `if`/`switch` on each case  
+  ‣ Stub out externals or library functions (sin, SHA1, atoi, etc.) by writing simple C functions  
+    (or comment‐annotated skeletons) that model their effects  
+  ‣ Unroll/bound loops, then `klee_assume(loop_count <= N)`  
+  ‣ Turn function‐pointer calls and indirect jumps into explicit branches  
+  ‣ Model syscalls/signals as symbolic flags or return codes  
+  ‣ Replace inline‐asm with fresh symbolic variables  
+
+---
+
+**Now**:  
+1. Here’s your original C snippet:
+```
+
+{CODE}
+
+```
+
+and more specifically here is the part of the code you need to rewrite:
+```
+{NL_CODE}
+```
+
+2. **Rewrite only the problematic parts** using the above techniques so that:
+   - Functionality (outputs, branches) is preserved.  
+   - It compiles under standard C + KLEE.  
+   - If full generality is impossible, restrict via `klee_assume` so that you can return a functionally equivalent version at least for a subset of inputs.
+
+3. For any external library or crypto call, **provide a stub implementation**—either real code or a comment block with function signature and intended behavior.
+
+## Now rewrite the problematic part(s) of the code and return the transformed version that is compilable and runnable in klee in the following format:
+### Transformed C Code:
+Start_of_transformed_code
+```c
+TRANSFORMED_CODE
+```
+End_of_transformed_code
+"""
+
+
+correction_prompt = """
+You are a C/KLEE expert. The verifier flagged an issue in the stub assumptions:
+
+--- Original Code ---
+{ORIGINAL_CODE}
+--- End Original ---
+
+--- Transformed Code ---
+{TRANSFORMED_CODE}
+--- End Transformed ---
+
+--- Verifier Feedback ---
+{FEEDBACK}
+--- End Feedback ---
+
+**Task:**  
+See if the feedback is correct and if yes then use the feedback to produce a **corrected transformed version** of the C code.  
+- Keep everything else KLEE‐friendly (symbolic declarations, assumptions, etc.).  
+- Ensure it still compiles under a standard C toolchain + KLEE.
+Rewrite the problematic part(s) of the code using the feedback and return the transformed version that is compilable and runnable in klee in the following format:
+
+Corrected Code Start
+```c
+<corrected C code here>
+````
+
+Corrected Code End 
+"""
+
+verification_prompt = """
+You are a code‐equivalence and symbolic‐analysis verifier.
+
+Below are two C snippets:
+
+--- Original Code ---
+{ORIGINAL_CODE}
+--- End Original ---
+
+--- Transformed Code ---
+{TRANSFORMED_CODE}
+--- End Transformed ---
+
+Your job:
+
+1. **Behavioral equivalence.** Confirm that for *all inputs*, both versions yield identical observable behavior (return values, I/O, side‐effects).  
+2. **Symbolic‐execution suitability.** Confirm that no rewrite step breaks KLEE‐friendliness (e.g. missing necessary `klee_assume`, unbounded loops, removed branches).
+
+**Crucial rule for externals/stubs:**  
+- If the transform *intentionally* stubbed an external or complex function (e.g. `calculate_bonus`), **do not** flag it as an issue *unless* you *know* of a *specific* missing constraint that’s required for correctness (e.g., “bonus must be ≤ 100” if you know that fact).  
+- Otherwise, **silently accept** the stub.
+
+Also:
+- **Ignore** style, formatting, or unrelated refactorings.  
+- **Only** report issues if you can give **actionable feedback** (e.g. “add `klee_assume(x>=0)` here”).
+
+---
+
+**Respond in this exact format:**
+
+Reasoning:
+<short bullet‐points describing any true, resolvable issues>
+
+Decision: YES   # if you find no actionable issues  
+Decision: NO    # if you have meaningful feedback
+
+Feedback:
+<If NO, list concise, actionable suggestions; if YES, leave blank.>
+"""
+
+
+
+
+
+
+
+def extract_updated_corrected_code(response: str) -> str:
+    """
+    Parses the LLM response wrapped between:
+      === Corrected Code Start ===
+      ```c
+      ...code...
+      ```
+      === Corrected Code End ===
+    and returns the C code as a string.
+    """
+    # Find the start marker
+    start_marker = "Corrected Code Start"
+    code_block_start = response.find(start_marker)
+    if code_block_start == -1:
+        raise ValueError("Start marker not found")
+
+    # Find the opening ```c after the start marker
+    fence_start = response.find("```c", code_block_start)
+    if fence_start == -1:
+        raise ValueError("Opening code fence not found")
+
+    # Find the closing ``` after the opening fence
+    fence_end = response.find("```", fence_start + 4)
+    if fence_end == -1:
+        raise ValueError("Closing code fence not found")
+
+    # Extract and return the code between the fences
+    return response[fence_start + 4 : fence_end].strip()
+
+
+def get_correction(model, original_code: str, transformed_code: str, feedback: str) -> str:
+    """
+    Generates a prompt for the model to correct the transformed code based on feedback.
+    """
+    correction_prompt_text = correction_prompt.format(
+        ORIGINAL_CODE=original_code,
+        TRANSFORMED_CODE=transformed_code,
+        FEEDBACK=feedback
+    )
+    response = model.query(correction_prompt_text)
+    # Extract the corrected code from the response
+    corrected_code = extract_updated_corrected_code(response)
+    return corrected_code
+
+def get_feedback(model, original_code: str, transformed_code: str) -> str:
+
+    resp = verification_prompt.format(
+        ORIGINAL_CODE=original_code,
+        TRANSFORMED_CODE=transformed_code
+    )
+    response = model.query(resp)
+    # Extract Reasoning
+    reasoning = response.split("Reasoning:")[1].split("Decision:")[0].strip()
+
+    # Extract Decision
+    m = re.search(r"Decision:\s*(YES|NO)", response)
+    decision = m.group(1) if m else None
+
+    # Extract Feedback
+    feedback = response.split("Feedback:")[1].strip()
+
+    print("Reasoning:\n", reasoning)
+    print("Decision:", decision)
+    print("Feedback:\n", feedback)
+    return decision, feedback
+
+
+
+def universal_prompt(model, code, NL_CODE):
+    prompt = universal_rewrite_prompt.format(CODE=code, NL_CODE=NL_CODE)
+    response = model.query(prompt)
+    return extract_transformed_code(response)
+
+
 import re
 
 def extract_transformed_code(response: str) -> str:
@@ -1043,7 +1251,7 @@ def extract_categories(llm_output: str):
     else:
         raise ValueError("No  category found in response.")
 
-def get_categories(model, code, NL_code):
+def get_categories(model, code):
     prompt = analyze_prompt.format(code=code)
     response = model.query(prompt)
     return extract_categories(response)
@@ -1059,9 +1267,10 @@ def get_all_categories(category_numbers: list) -> str:
 
 
 #given the original code get the categories then get the relevant prompts and msake the final call to get the ocrrected vrsion
-def get_rewrite_prompt(model, code, NL_code):
-    categories = get_categories(model, code, NL_code)
+def get_rewrite_prompt(model_template, model_translated, code):
+    categories = get_categories(model_template, code)
+    print(categories)
     relevant_prompts = get_all_categories(categories)
     prompt = rewrite_prompt_template.format(CODE_SNIPPET=code, RELEVANT_PROMPTS=relevant_prompts)
-    response = model.query(prompt)
+    response = model_translated.query(prompt)
     return extract_transformed_code(response)

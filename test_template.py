@@ -1,6 +1,7 @@
 import os
 import sys
 import shutil
+import json
 import re
 from get_minimal import get_minimal
 import argparse
@@ -9,7 +10,7 @@ from translate_to_smt import get_smt_constraints
 from replace import rewrite_and_replace
 from replace_mad import debate_rewrite
 from  prepare_klee import create_klee_main
-from templates import get_rewrite_prompt, universal_prompt, get_feedback, get_correction
+from templates import get_rewrite_prompt, universal_prompt, get_feedback, get_correction, get_test_vectors,get_differential_testing_code, run_differential_testing_code
 
 
 
@@ -189,8 +190,8 @@ def main():
 
     #get the feedback from the model
     decision, feedback = get_feedback(model_feedback, clean_code, universal_transformed_code)
-    # decision = "NO"
-    # feedback = "The transformation is not correct. Please try to create a model of the bonus function"
+    decision = "NO"
+    feedback = "The transformation is not correct. Please try to create a model of the bonus function"
     with open(os.path.join(log_folder, "universal_transformed_code.c"), 'w') as f:
         f.write(universal_transformed_code)
 
@@ -203,6 +204,28 @@ def main():
         updated_transformed_code = get_correction(model_updated_trasnlation, clean_code, universal_transformed_code, feedback)
         with open(os.path.join(log_folder, "updated_transformed_code.c"), 'w') as f:
             f.write(updated_transformed_code)
+    else :
+        updated_transformed_code = universal_transformed_code
+    
+    model_differential_testing = create_model_log_based_name(model_name, log_folder, "differential_testing")
+    differential_testing_code = get_differential_testing_code(model_differential_testing, clean_code, nl_code, updated_transformed_code)
+    with open(os.path.join(log_folder, "differential_testing_code.c"), 'w') as f:
+        f.write(differential_testing_code)
+        #keep the path of this file
+    path_to_differential_testing_code = os.path.join(log_folder, "differential_testing_code.c")
+
+    model_tests = create_model_log_based_name(model_name, log_folder, "model_tests")
+                                                  
+    test_vectors = get_test_vectors(model_tests, differential_testing_code)
+    
+    with open(os.path.join(log_folder, "test_vectors.json"), 'w') as f:
+        json.dump(test_vectors, f, indent=4)
+
+    run_tests_results = run_differential_testing_code( path_to_differential_testing_code, test_vectors)
+
+    with open(os.path.join(log_folder, "run_tests.c"), 'w') as f:
+        f.write(run_tests_results)
+
 
 
     # clean_code = c_code.replace('#include "assume.h"', '')

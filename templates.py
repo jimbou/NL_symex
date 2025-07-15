@@ -1,5 +1,6 @@
 import re
 import json
+import subprocess
 
 analyze_prompt = """
 You are a symbolic execution assistant.
@@ -1147,8 +1148,209 @@ Feedback:
 """
 
 
+differential_testing_prompt = """
+You are a C‐code differential tester.
+
+We have the original version of the code.
+--- ORIGINAL CODE BEGIN ---
+{ORIGINAL_CODE}
+--- ORIGINAL CODE END ---
+
+This part of the code was identified as difficult for symbolic execution tools like KLEE:
+--- DIFFICULTY CODE BEGIN ---
+{DIFFICULT_CODE}
+--- DIFFICULTY CODE END ---
+
+It was transformed to make it more KLEE‐friendly:
+--- TRANSFORMED CODE BEGIN ---
+{TRANSFORMED_CODE}
+--- TRANSFORMED CODE END ---
+
+We want to **compare the functionality** of the original and transformed code under the same inputs.
+
+---
+
+**IMPORTANT REQUIREMENTS:**
+1. The original *difficult code* must **NOT be modified** — only wrap it in a function so it can be called with input parameters and print outputs as needed.
+2. If the original code included any `#include` lines, they must be included at the top of the final program to ensure it compiles.
+3. The transformed code may be lightly adjusted to fit in the same structure (e.g., wrapped in a function).
+
+---
+
+**Generate a single complete C program that:**
+
+1. *You can no longer use the klee instrumentation macros* (`klee_make_symbolic`, `klee_assume`, `klee_assert`) in the original code, so you must define them as no-ops.
+   This is to ensure the original code can run without KLEE instrumentation. Use the following definitions:
+   replace `klee_make_symbolic` with a no-op function that does nothing,
+   replace klee_assume with appropriate `if` statements that do not affect the original code,
+   and replace `klee_assert` with a no-op function that does nothing.
+2. **Includes both** the original code (unmodified except wrapped in a function) and the transformed code (in a function).
+
+3. **Defines** a `main(int argc, char **argv)` that:
+
+   * Reads lines from `stdin`, each containing exactly `N` whitespace-separated integers (matching the input parameters of the functions under test).
+   * Calls both the original and transformed functions with the same inputs.
+   * Prints one line for each test case in this format:
+
+     ```
+     <inputs...> -> orig: <orig_result>  trans: <trans_result>
+     ```
+
+---
+
+Return **only the complete standalone C source**, compilable under `gcc`.
+
+**Extra Notes:**
+
+* Always handle exactly `N` inputs per line; skip lines with fewer values.
+* Print all comparisons, even if outputs are identical, to enable diff analysis later.
+  """
 
 
+generate_test_vectors_prompt = """
+You are a test vector generator.
+
+The following C program reads from stdin lines with exactly N (inputs) and then prints results comparing two implementations.
+
+--- CODE BEGIN ---
+{my_c_code}
+--- CODE END ---
+
+**Please generate 10 diverse lines of test inputs that exercise different paths.**
+Format them as a JSON list of lists, e.g.:
+[
+  [5, 10],
+  [0, -3],
+]
+Return only the JSON.
+"""
+def clean_braces_in_klee_macros(prompt_text):
+    # Replace only inside lines that start with #define klee_
+    def replace_line(line):
+        if line.strip().startswith("#define klee_"):
+            return line.replace("{{", "{").replace("}}", "}")
+        return line
+
+    return "\n".join(replace_line(line) for line in prompt_text.splitlines())
+
+def extract_c_code(response):
+    """
+    Extract the C code block from the LLM response.
+    It tries to find ```c ... ``` first, then ``` ... ```, then falls back to the whole text.
+    """
+    # Try to find ```c ... ```
+    code_blocks = re.findall(r"```c\s*(.*?)```", response, re.DOTALL)
+    if code_blocks:
+        return code_blocks[0].strip()
+    
+    # Try to find any ```
+    code_blocks = re.findall(r"```(?:[^\n]*)\n(.*?)```", response, re.DOTALL)
+    if code_blocks:
+        return code_blocks[0].strip()
+    
+    # Try to find ''' (alternative sometimes used)
+    code_blocks = re.findall(r"'''(?:[^\n]*)\n(.*?)'''", response, re.DOTALL)
+    if code_blocks:
+        return code_blocks[0].strip()
+
+    # Fallback: whole response
+    return response.strip()
+
+def extract_test_vectors(response: str):
+    """
+    Extracts a JSON list of test vectors from an LLM response that may contain markdown or explanations.
+    """
+    # Try to extract JSON from ```json ... ```
+    match = re.search(r"```json\s*(.*?)```", response, re.DOTALL)
+    if match:
+        json_content = match.group(1).strip()
+        return json.loads(json_content)
+
+    # Fallback: try to find any bracketed JSON-looking array
+    match = re.search(r"(\[\s*\[.*?\]\s*\])", response, re.DOTALL)
+    if match:
+        json_content = match.group(1).strip()
+        return json.loads(json_content)
+    
+    # Last resort: try to parse the entire response
+    try:
+        return json.loads(response)
+    except json.JSONDecodeError as e:
+        raise ValueError(f"Failed to parse test vectors: {e}\n\nResponse was:\n{response}")
+
+    
+def get_test_vectors(model, my_c_code: str) -> list:
+    """
+    Generates test vectors for the given C code using the LLM.
+    """
+    prompt = generate_test_vectors_prompt.format(my_c_code=my_c_code)
+    
+    # Assuming `model` is an instance of a language model that can query with the prompt
+    response = model.query(prompt)
+    
+    # Extract the test vectors from the response
+    return extract_test_vectors(response)
+    
+
+def get_differential_testing_code(model, original_code: str, difficult_code: str, transformed_code: str) -> str:
+    """
+    Generates a complete C program for differential testing of the original and transformed code.
+    """
+    prompt = differential_testing_prompt.format(
+        ORIGINAL_CODE=original_code,
+        DIFFICULT_CODE=difficult_code,
+        TRANSFORMED_CODE=transformed_code
+    )
+    prompt= clean_braces_in_klee_macros(prompt)
+   #define klee_assert(cond)  do {{ if(!(cond)) exit(1); }} while(0)")
+    
+    # Assuming `model` is an instance of a language model that can query with the prompt
+    response = model.query(prompt)
+    
+    # Extract the C code from the response
+    return extract_c_code(response)
+
+
+def run_differential_testing_code(code_path, tests):
+    """
+    Runs the generated differential testing code with the provided test vectors.
+    This function assumes that the code is already compiled and ready to execute.
+    """
+    
+
+    
+
+    # Compile the C code
+    compile_cmd = ["gcc", "-o", "differential_test", code_path]
+    subprocess.run(compile_cmd, check=True)
+
+    # Run the compiled program with the test vectors
+    process = subprocess.Popen(["./differential_test"], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    
+    # Prepare input data
+    input_data = "\n".join(" ".join(map(str, test)) for test in tests) + "\n"
+    print(input_data)
+
+    
+    stdout, stderr = process.communicate(input=input_data.encode('utf-8'))
+
+    if process.returncode != 0:
+        raise RuntimeError(f"Error running differential testing code: {stderr.decode('utf-8')}")
+    output_data = stdout.decode('utf-8')
+    print("Differential Testing Output:\n", output_data)
+    print("Differential Testing Errors:\n", stderr.decode('utf-8'))
+
+    return output_data
+
+
+def parse_diff_output_line(line):
+    # Example: "5 8 -> orig: 42  trans: 42"
+    parts = line.split("->")
+    inputs = list(map(int, parts[0].strip().split()))
+    results = parts[1].split()
+    orig = int(results[1])
+    trans = int(results[3])
+    return {"inputs": inputs, "orig": orig, "trans": trans}
 
 
 

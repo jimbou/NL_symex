@@ -1,6 +1,6 @@
 #include <stdio.h>
 #include "assume.h"  // optional, or just define above
-
+#include "../bonus_calculator.h"  
 int compute(int x) {
     int result = x * 2;
 

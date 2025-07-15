@@ -1,0 +1,83 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include "../bonus_calculator.h"
+
+// Define KLEE macros as no-ops for original code
+#define klee_make_symbolic(addr, size, name) ((void)0)
+#define klee_assume(cond) if (!(cond)) { /* do nothing */ }
+#define klee_assert(cond) ((void)0)
+
+// Original implementation (wrapped in function)
+int original_compute(int x) {
+    int result = x * 2;
+
+    // This part calculates a bonus based on some complex criteria.
+    int bonus = calculate_bonus(x);
+    result += bonus;
+
+    return result;
+}
+
+// Transformed implementation
+int transformed_calculate_bonus(int x) {
+    int bonus;
+    klee_make_symbolic(&bonus, sizeof(bonus), "bonus");
+    
+    if (x < 0) {
+        klee_assume(bonus == 0);
+    } else if (x < 10) {
+        klee_assume(bonus >= 0 && bonus <= 10);
+    } else if (x < 100) {
+        klee_assume(bonus >= 10 && bonus <= 50);
+    } else {
+        klee_assume(bonus >= 50 && bonus <= 100);
+    }
+    
+    return bonus;
+}
+
+int transformed_compute(int x) {
+    int result = x * 2;
+
+    // This part calculates a bonus based on some complex criteria.
+    int bonus = transformed_calculate_bonus(x);
+    result += bonus;
+
+    return result;
+}
+
+int main(int argc, char **argv) {
+    char *line = NULL;
+    size_t len = 0;
+    ssize_t read;
+
+    while ((read = getline(&line, &len, stdin)) != -1) {
+        // Remove newline character
+        if (line[read - 1] == '\n') {
+            line[read - 1] = '\0';
+            read--;
+        }
+
+        // Skip empty lines
+        if (read == 0) continue;
+
+        // Parse input
+        int x;
+        int items = sscanf(line, "%d", &x);
+        
+        if (items != 1) {
+            continue;  // Skip lines that don't have exactly 1 integer
+        }
+
+        // Call both functions
+        int orig_result = original_compute(x);
+        int trans_result = transformed_compute(x);
+
+        // Print comparison
+        printf("%d -> orig: %d  trans: %d\n", x, orig_result, trans_result);
+    }
+
+    free(line);
+    return 0;
+}

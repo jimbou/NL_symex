@@ -75,11 +75,17 @@ def create_log_folders_and_models(log_folder,model_name):
 def extract_blocks(c_code: str):
     start_marker = "assume_NL_start;"
     end_marker = "assume_NL_stop;"
+    start_marker2 = "assume_NL_start"
+    end_marker2 = "assume_NL_stop"
     
     start_idx = c_code.find(start_marker)
     end_idx = c_code.find(end_marker)
     
-    if start_idx == -1 or end_idx == -1:
+    if start_idx == -1:
+        start_idx = c_code.find(start_marker2)
+    if end_idx == -1:
+        end_idx = c_code.find(end_marker2)
+    if start_idx == -1 or end_idx == -1 or start_idx > end_idx:
         raise ValueError("Missing NL markers")
 
     prefix = c_code[:start_idx].strip()
@@ -132,9 +138,11 @@ def main():
                         help='Path to log folder (optional, default: log_temp)')
     parser.add_argument('--model', required=False, default='deepseek-v3-aliyun',
                         help='Model to use (optional, default: deepseek-v3-aliyun)')
-    parser.add_argument('--mad', required=False, default=True,
+    parser.add_argument('--mad', required=False, default=False,
                         help='Should we use multi agent debate? (optional, default: True)')
-
+    parser.add_argument('--differential_testing', action='store_true',
+                        help='Enable differential testing mode', required=False, default=False)
+    
     args = parser.parse_args()
     if args.model:
         model_name = args.model
@@ -149,7 +157,12 @@ def main():
 
     c_script_path = args.c_code
 
-    
+    if args.differential_testing or args.differential_testing == 'True' or args.differential_testing == 'true' or args.differential_testing == '1' or args.differential_testing == 'yes' or args.differential_testing == True:
+        print("[INFO] Using differential testing mode")
+        differential_testing = True
+    else:
+        print("[INFO] Not using differential testing mode")
+        differential_testing = False
     if args.mad == 'True' or args.mad == 'true' or args.mad == '1' or args.mad == 'yes' or args.mad == True:
         print("[INFO] Using multi-agent debate mode")
         mad= True
@@ -172,7 +185,9 @@ def main():
         c_code = f.read()
     #remove #include "assume.h" if it exists
     c_code = c_code.replace('#include "assume.h"', '').strip()
+    c_code = c_code.replace('#include "../../assume.h"', '').strip()
 
+    c_code = c_code.replace('#include "../assume.h"', '').strip()
 
     prefix, nl_code, _ = extract_blocks(c_code)
     prefix_compilable = make_prefix_compilable(prefix)
@@ -188,53 +203,62 @@ def main():
     clean_code = c_code.replace('assume_NL_start;', '').replace('assume_NL_stop;', '').strip()
     universal_transformed_code = universal_prompt(model_universal, clean_code, nl_code)
 
-    #get the feedback from the model
-    decision, feedback = get_feedback(model_feedback, clean_code, universal_transformed_code)
-    decision = "NO"
-    feedback = "The transformation is not correct. Please try to create a model of the bonus function"
     with open(os.path.join(log_folder, "universal_transformed_code.c"), 'w') as f:
         f.write(universal_transformed_code)
 
-    with open(os.path.join(log_folder, "feedback.txt"), 'w') as f:
-        f.write(f"Decision: {decision}\n")
-        f.write(feedback)
+    if mad:
+        #get the feedback from the model
+        decision, feedback = get_feedback(model_feedback, clean_code, universal_transformed_code)
+        # decision = "NO"
+        # feedback = "The transformation is not correct. Please try to create a model of the bonus function"
+    
 
-    if "no" in decision.lower():
-        print("[INFO] Feedback indicates the transformation is not correct. Exiting.")
-        updated_transformed_code = get_correction(model_updated_trasnlation, clean_code, universal_transformed_code, feedback)
+        with open(os.path.join(log_folder, "feedback.txt"), 'w') as f:
+            f.write(f"Decision: {decision}\n")
+            f.write(feedback)
+
+        if "no" in decision.lower():
+            print("[INFO] Feedback indicates the transformation is not correct. Exiting.")
+            updated_transformed_code = get_correction(model_updated_trasnlation, clean_code, universal_transformed_code, feedback)
+            with open(os.path.join(log_folder, "updated_transformed_code.c"), 'w') as f:
+                f.write(updated_transformed_code)
+        else :
+            updated_transformed_code = universal_transformed_code
+    else:
+        updated_transformed_code = universal_transformed_code
         with open(os.path.join(log_folder, "updated_transformed_code.c"), 'w') as f:
             f.write(updated_transformed_code)
-    else :
-        updated_transformed_code = universal_transformed_code
     
-    model_differential_testing = create_model_log_based_name(model_name, log_folder, "differential_testing")
-    differential_testing_code = get_differential_testing_code(model_differential_testing, clean_code, nl_code, updated_transformed_code)
-    with open(os.path.join(log_folder, "differential_testing_code.c"), 'w') as f:
-        f.write(differential_testing_code)
-        #keep the path of this file
-    path_to_differential_testing_code = os.path.join(log_folder, "differential_testing_code.c")
 
-    model_tests = create_model_log_based_name(model_name, log_folder, "model_tests")
-                                                  
-    test_vectors = get_test_vectors(model_tests, differential_testing_code)
+    if differential_testing:
+        model_differential_testing = create_model_log_based_name(model_name, log_folder, "differential_testing")
+        differential_testing_code = get_differential_testing_code(model_differential_testing, clean_code, nl_code, updated_transformed_code)
+        with open(os.path.join(log_folder, "differential_testing_code.c"), 'w') as f:
+            f.write(differential_testing_code)
+            #keep the path of this file
+        path_to_differential_testing_code = os.path.join(log_folder, "differential_testing_code.c")
+
+        model_tests = create_model_log_based_name(model_name, log_folder, "model_tests")
+                                                    
+        test_vectors = get_test_vectors(model_tests, differential_testing_code)
+        
+        with open(os.path.join(log_folder, "test_vectors.json"), 'w') as f:
+            json.dump(test_vectors, f, indent=4)
+
+        run_tests_results = run_differential_testing_code( path_to_differential_testing_code, test_vectors)
+
+        with open(os.path.join(log_folder, "run_tests.c"), 'w') as f:
+            f.write(run_tests_results)
+
+
+
+    # # clean_code = c_code.replace('#include "assume.h"', '')
     
-    with open(os.path.join(log_folder, "test_vectors.json"), 'w') as f:
-        json.dump(test_vectors, f, indent=4)
-
-    run_tests_results = run_differential_testing_code( path_to_differential_testing_code, test_vectors)
-
-    with open(os.path.join(log_folder, "run_tests.c"), 'w') as f:
-        f.write(run_tests_results)
+    # transformed_code = get_rewrite_prompt( model_template, model_translated, c_code)
 
 
-
-    # clean_code = c_code.replace('#include "assume.h"', '')
-    
-    transformed_code = get_rewrite_prompt( model_template, model_translated, c_code)
-
-
-    with open(os.path.join(log_folder, "trasnlated_code.c"), 'w') as f:
-        f.write(transformed_code)
+    # with open(os.path.join(log_folder, "trasnlated_code.c"), 'w') as f:
+    #     f.write(transformed_code)
 
 
 if __name__ == "__main__":

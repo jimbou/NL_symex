@@ -979,6 +979,13 @@ Your task is:
 
 Only rewrite the minimal necessary fragment(s) — not the whole program if it’s not needed. Be precise and KLEE-compatible.
 
+  Remove `printf` unless it affects control flow or state  
+  Replacing floating-point operations with integer approximations if safe  
+- Simplify symbolic conditions whenever possible:
+    - `if (pow(x, 2) == 49)` → `if (x == 7)`
+    - `if ((1024.0 + x == 1024.0) && (x > 0.0))` → `if (x == 0)`
+- Avoid symbolic expressions nested inside complex math or array expressions.
+- Use `klee_assert` to expose security-sensitive paths when appropriate.
 ---
 
 ### Original C Code:
@@ -1032,6 +1039,7 @@ You’re a C/KLEE expert. Real‐world C often trips symbolic executors because 
   • OS deps: stat(), open(), read(), execve()  
   • Pointer aliasing: multiple names for same address  
   • Floating/overflow: float rounding, integer wraparound  
+  • Standard I/O: `scanf`, `fgets`, and `printf`
 
 And the **usual remedies** in KLEE‐friendly code:
 
@@ -1045,18 +1053,27 @@ And the **usual remedies** in KLEE‐friendly code:
   ‣ Turn function‐pointer calls and indirect jumps into explicit branches  
   ‣ Model syscalls/signals as symbolic flags or return codes  
   ‣ Replace inline‐asm with fresh symbolic variables  
+  ‣ Replace `scanf`, `fgets`, etc., with symbolic input  
+  ‣ Remove `printf` unless it affects control flow or state
 
+**Additional Guidelines**:
+- Try to expose poitential overflows.
+- If the code uses floating-point numbers, try to **translate them to integer operations** if the logic permits.
+- Simplify complex symbolic conditions, for example:
+  - `if ((1024.0f + x == 1024.0f) && (x > 0.0f))` → `if (x == 0)`
+  - `if (pow(symvar, 2) == 49.0)` → `if (symvar == 7)`
+- Avoid deeply nested symbolic expressions. Prefer explicit branching or discrete value checks.
 ---
 
 **Now**:  
-1. Here’s your original C snippet:
+1. Here’s your original C snippet which we attempted to analyze with klee:
 ```
 
 {CODE}
 
 ```
 
-and more specifically here is the part of the code you need to rewrite:
+and more specifically here is the part of the code you need to rewrite because klee could not handle it well:
 ```
 {NL_CODE}
 ```
@@ -1131,6 +1148,7 @@ Your job:
 
 Also:
 - **Ignore** style, formatting, or unrelated refactorings.  
+- **Removed prints that do not affect the control flow** are fine.
 - **Only** report issues if you can give **actionable feedback** (e.g. “add `klee_assume(x>=0)` here”).
 
 ---
@@ -1138,7 +1156,7 @@ Also:
 **Respond in this exact format:**
 
 Reasoning:
-<short bullet‐points describing any true, resolvable issues>
+<short points describing any true, resolvable issues>
 
 Decision: YES   # if you find no actionable issues  
 Decision: NO    # if you have meaningful feedback

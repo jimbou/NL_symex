@@ -5,3 +5,9 @@ tenacity
 python-sat[pblib,aiger]
 requests
 Levenshtein
+
+glob
+
+struct
+importlib.util
+os

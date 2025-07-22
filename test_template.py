@@ -11,7 +11,7 @@ from replace import rewrite_and_replace
 from replace_mad import debate_rewrite
 from  prepare_klee import create_klee_main
 from templates import get_rewrite_prompt, universal_prompt, get_feedback, get_correction, get_test_vectors,get_differential_testing_code, run_differential_testing_code
-
+from ktest_transform import apply_remap_on_ktests
 
 
 import subprocess
@@ -142,7 +142,10 @@ def main():
                         help='Should we use multi agent debate? (optional, default: True)')
     parser.add_argument('--differential_testing', action='store_true',
                         help='Enable differential testing mode', required=False, default=False)
+    parser.add_argument('--ktest_dir', required=False, default='ktests',
+                        help='Directory containing ktest files for remapping (optional, default: ktests)')
     
+   
     args = parser.parse_args()
     if args.model:
         model_name = args.model
@@ -181,6 +184,17 @@ def main():
     model_updated_trasnlation= create_model_log_based_name(model_name, log_folder, "updated_translation")
     # log_template, model_translated, log_translated, model_universal, log_universal, model_feedback, log_folder_feedback = create_log_folders_and_models(f"{log_folder}/llm_calls" , model_name)
 
+    model_k_tests = create_model_log_based_name(model_name, log_folder, "k_tests")
+
+    #read a file for the original code, read a file for the transformed code
+    with open("/home/jim/NL_constraints/logic_bombs/ln_ef_l2/ln_ef_l2_klee_transformed_internal.c", 'r') as f:
+        transformed_code = f.read()
+    with open("/home/jim/NL_constraints/logic_bombs/ln_ef_l2/ln_ef_l2_klee.c", 'r') as f:
+        original_code = f.read()
+    
+    input_dir = args.ktest_dir
+    apply_remap_on_ktests(model_k_tests, original_code, transformed_code, input_dir)
+    return 0
     with open(c_script_path, 'r') as f:
         c_code = f.read()
     #remove #include "assume.h" if it exists

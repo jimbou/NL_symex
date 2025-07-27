@@ -2,20 +2,19 @@
 TOY:
 */
 #include <string.h> 
+#include <klee/klee.h>
 #include <math.h>
-#include "utils.h"
-#include "a_tester.h"
 
 // {"s":{"length": 4}}
 int logic_bomb(char* s) {
     int symvar = s[0] - 48;
-    assume_Nl_start;
+    // assume_Nl_start;
     double d = log(symvar); 
-    assume_NL_stop;
+    // assume_NL_stop;
     if(2 < d && d < 3){
-        return BOMB_ENDING;
+        return 1;
     }else{
-        return NORMAL_ENDING;
+        return 0;
     }
 }
 

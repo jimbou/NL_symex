@@ -40,3 +40,50 @@ klee
 cd home/
 ls
 exit
+source /home/jim/NL_constraints/venv/bin/activate
+ls
+ls
+python3 get_klee_coverage.py /ln_ef_l2/ln_ef_l2_klee.c
+ls
+python3 get_klee_coverage.py /ln_ef_l2/ln_ef_l2_klee.c
+python3 get_klee_coverage.py /ln_ef_l2/ln_ef_l2_klee.c
+ls
+python3 get_klee_coverage.py ln_ef_l2/ln_ef_l2_klee.c
+python3 get_klee_coverage.py ln_ef_l2/ln_ef_l2_klee.c
+python3 get_klee_coverage.py ln_ef_l2/ln_ef_l2_klee.c
+python3 get_klee_coverage.py ln_ef_l2/ln_ef_l2_klee.c
+klee ln_ef_l2/ln_ef_l2_klee.bc 
+ls
+which klee
+klee --version
+cd ../
+ls
+which klee
+cd ../
+ls
+find / -name klee -type f 2>/dev/null
+/tmp/klee_build130stp_z3/bin/klee --version
+nano ~/.bashrc
+cd
+ls
+nano ~/.bashrc
+sudo apt install nano
+vi ~/.bashrc
+source ~/.bashrc
+which klee
+klee --version
+ls
+python3 get_klee_coverage.py ln_ef_l2/ln_ef_l2_klee.c
+python3 get_klee_coverage.py ln_ef_l2/ln_ef_l2_klee.c
+python3 get_klee_coverage.py ln_ef_l2/ln_ef_l2_klee.c
+python3 get_klee_coverage.py ln_ef_l2/ln_ef_l2_klee.c
+ls
+ls ln_ef_l2/klee-last
+python3 get_klee_coverage.py ln_ef_l2/ln_ef_l2_klee.c
+python3 get_klee_coverage.py ln_ef_l2/ln_ef_l2_klee.c
+python3 get_klee_coverage.py ln_ef_l2/ln_ef_l2_klee.c
+python3 get_klee_coverage.py ln_ef_l2/ln_ef_l2_klee.c
+ython3 get_klee_coverage.py ln_ef_l2/ln_ef_l2_klee.ce
+python3 get_klee_coverage.py ln_ef_l2/ln_ef_l2_klee.c
+python3 get_klee_coverage.py ln_ef_l2/ln_ef_l2_klee.c
+exit

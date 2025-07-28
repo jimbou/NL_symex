@@ -87,3 +87,7 @@ ython3 get_klee_coverage.py ln_ef_l2/ln_ef_l2_klee.ce
 python3 get_klee_coverage.py ln_ef_l2/ln_ef_l2_klee.c
 python3 get_klee_coverage.py ln_ef_l2/ln_ef_l2_klee.c
 exit
+source /home/jim/NL_constraints/venv/bin/activate
+ls
+pwd
+exit

@@ -4,7 +4,7 @@ import subprocess
 import json
 import re
 
-
+KLEE_BIN = "/tmp/klee_build130stp_z3/bin/klee"
 def get_next_output_dir(base="klee-out-analysis"):
     i = 0
     while True:
@@ -26,7 +26,7 @@ def compile_to_bc(c_file_path):
 
 def run_klee(bc_file_path, output_dir):
     klee_cmd = [
-        "klee",
+        KLEE_BIN,
         f"--output-dir={output_dir}",
         "--write-cov",
         "--emit-all-errors",
@@ -180,13 +180,13 @@ def get_uncovered(c_file_path):
 
         # covered, uncovered = analyze_coverage(source_file, output_dir)
 
-        print("Covered lines:")
-        for l in sorted(covered):
-            print(l)
+        # print("Covered lines:")
+        # for l in sorted(covered):
+        #     print(l)
 
-        print("\nUncovered lines:")
-        for l in sorted(uncovered):
-            print(l)
+        # print("\nUncovered lines:")
+        # for l in sorted(uncovered):
+        #     print(l)
     except subprocess.CalledProcessError as e:
         print(f"Error during execution: {e}")
     finally:
@@ -212,13 +212,12 @@ def main():
 
         # covered, uncovered = analyze_coverage(source_file, output_dir)
 
-        print("Covered lines:")
-        for l in sorted(covered):
-            print(l)
+        result = {
+            "covered": sorted(list(covered)),
+            "uncovered": sorted(list(uncovered))
+        }
+        print(json.dumps(result))  # <- Make sure ONLY this is printed
 
-        print("\nUncovered lines:")
-        for l in sorted(uncovered):
-            print(l)
     except subprocess.CalledProcessError as e:
         print(f"Error during execution: {e}")
     finally:

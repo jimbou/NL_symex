@@ -17,10 +17,10 @@ The following lines were **not covered** during symbolic execution:
 
 To assist symbolic execution, we annotate parts of the code that are difficult for the engine to reason about using two markers:
 
-- `assume_NL_start();` – placed **before** a region of difficult code
-- `assume_NL_stop();` – placed **after** the region
+- `assume_NL_start();` placed **before** a region of difficult code
+- `assume_NL_stop();`  placed **after** the region
 
-This region is later translated or abstracted into simpler, more tractable code.
+This region is later translated or abstracted into simpler, more tractable code. This difficult code often is usually before the uncovered lines because the inability of klee to reason about it leads to the uncovered lines.
 
 Symbolic execution engines typically struggle with the following kinds of code constructs:
 
@@ -89,17 +89,20 @@ def get_assume_code(model, source_path, output_path, uncovered):
     # Read the source code
     with open(source_path, 'r') as f:
         source_code = f.readlines()
+    
+    numbered_code = "\n".join(f"{i + 1}: {line.rstrip()}" for i, line in enumerate(source_code))
+
 
     # Convert the uncovered set into a string list of lines with numbers and content
     uncovered_str = "\n".join(f"{lineno}: {line}" for lineno, line in sorted(uncovered))
 
     # Generate the LLM response suggesting where to insert assume_NL markers
-    lines = get_klee_lines(model, source_code, uncovered_str)
+    lines = get_klee_lines(model, numbered_code, uncovered_str)
 
     # Parse the LLM output (assumed to be in JSON format)
-    cleaned_lines = parse_lines(lines)
-    insert_start_line = cleaned_lines.get("insert_after_start")
-    insert_stop_line = cleaned_lines.get("insert_after_stop")
+    # cleaned_lines = parse_lines(lines)
+    insert_start_line = lines.get("insert_after_start")
+    insert_stop_line = lines.get("insert_after_stop")
 
     # Insert assume_NL_start/stop and write to new file
     output_code = insert_assume_markers(source_path, insert_start_line, insert_stop_line, output_path)

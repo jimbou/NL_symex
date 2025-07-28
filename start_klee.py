@@ -14,7 +14,8 @@ Your `main()` must:
 - Ensure any symbolic strings are null-terminated
 
 Output format:
-Return **only** the full `main()` function and the required includes.
+Return **only** the full `main()` function and the required includes that are not already present in the original code.
+Do not return the original function(s) or any other code.
 Do NOT include or modify the original code.
 Do NOT add any explanation or markdown formatting.
 
@@ -54,8 +55,17 @@ def merge_and_save(model, original_path: str, output_path: str):
 
     # Avoid duplicate includes
     if '#include <klee/klee.h>' in original_code:
-        main_code = re.sub(r'#include\s*<klee/klee.h>', '', main_code)
+        original_code = re.sub(r'#include\s*<klee/klee.h>', '', original_code)
 
+    if '#include <klee/klee.h>' in main_code:
+        main_code = re.sub(r'#include\s*<klee/klee.h>', '', main_code)
+    
+    original_includes = set(re.findall(r'#include\s*<[^>]+>', original_code))
+    main_includes = set(re.findall(r'#include\s*<[^>]+>', main_code))
+
+    # 2. Remove includes from main_code that are already in original_code
+    for inc in original_includes:
+        main_code = main_code.replace(inc, '')
     merged_code = "#include <klee/klee.h>\n\n"+ original_code.rstrip() + "\n\n" + main_code.strip() + "\n"
 
     with open(output_path, 'w') as f:
@@ -64,4 +74,3 @@ def merge_and_save(model, original_path: str, output_path: str):
     print(f"Saved instrumented C file to: {output_path}")
     return merged_code
 
-def total_klee(original_path)

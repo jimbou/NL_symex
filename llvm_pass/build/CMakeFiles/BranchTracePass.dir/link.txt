@@ -1,0 +1,1 @@
+/usr/bin/c++ -fPIC -shared  -o libBranchTracePass.so CMakeFiles/BranchTracePass.dir/BranchTracePass.cpp.o   -L/usr/local/lib 

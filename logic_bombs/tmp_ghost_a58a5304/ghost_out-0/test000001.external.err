@@ -1,0 +1,8 @@
+Error: failed external call: assume_NL_start
+File: tmp_ghost_a58a5304/ghost.c
+Line: 12
+assembly.ll line: 24
+State: 1
+Stack: 
+	#000000024 in logic_bomb(s=103897603367584) at tmp_ghost_a58a5304/ghost.c:12
+	#100000074 in main() at tmp_ghost_a58a5304/ghost.c:27

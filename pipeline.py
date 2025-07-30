@@ -31,7 +31,7 @@ def prepare_and_remap_ktests(model, TEMP_DIR, local_log_folder, docker_name, ori
     print("[INFO] Copying .ktest files from container...")
     subprocess.run([
         "docker", "cp",
-        f"{docker_name}:/home/klee/tmp_ghost_76687470/ghost_out-0",
+        f"{docker_name}:{TEMP_DIR}/ghost_out-0",
         local_ktest_dir
     ], check=True)
 
@@ -128,7 +128,7 @@ def run_tests_and_compare(TEMP_DIR, docker_name, orig_executable, ghost_executab
         container_trace_dir = f"{TEMP_DIR}/{trace_logs}"
         subprocess.run(["docker", "exec", docker_name, "mkdir", "-p", container_trace_dir], check=True)
 
-        print("🔎 Finding .ktest files in ghost output dir")
+        print(f"🔎 Finding .ktest files in {ghost_output_dir}")
         find_ktests_cmd = [
             "docker", "exec", docker_name,
             "bash", "-c", f"find {ghost_output_dir} -name '*.ktest'"
@@ -139,17 +139,32 @@ def run_tests_and_compare(TEMP_DIR, docker_name, orig_executable, ghost_executab
         print(f"📦 Found {len(ktest_files)} test cases.")
 
         for ktest in ktest_files:
+            remapped=False
             name = os.path.basename(ktest)
-            trace_orig = f"{container_trace_dir}/orig_{name}.trace"
-            trace_ghost = f"{container_trace_dir}/ghost_{name}.trace"
+            name_cleaned = name
+            if "remapped" in name:
+                remapped=True  
+                name_cleaned=name.replace("remapped_", "")
 
-            for exe_path, trace_path in [(orig_executable, trace_orig), (ghost_executable, trace_ghost)]:
-                cmd = (
+            trace_orig = f"{container_trace_dir}/orig_{name_cleaned}.trace"
+            trace_ghost = f"{container_trace_dir}/ghost_{name_cleaned}.trace"
+            if remapped:
+                #running on the original
+                exe_path = orig_executable
+                trace_path = trace_orig
+            # for exe_path, trace_path in [(orig_executable, trace_orig), (ghost_executable, trace_ghost)]:
+                
+            else:
+                #running on the ghost
+                exe_path = ghost_executable
+                trace_path = trace_ghost
+               
+            cmd = (
                    f"export LD_LIBRARY_PATH=/tmp/klee_build130stp_z3/lib:$LD_LIBRARY_PATH && KTEST_FILE={ktest} {exe_path} > {trace_path} 2>/dev/null"
                 )
-                subprocess.run([
-                    "docker", "exec", docker_name, "bash", "-c", cmd
-                ], check=True)
+            subprocess.run([
+                "docker", "exec", docker_name, "bash", "-c", cmd
+            ], check=True)
 
         local_result_dir = local_folder_name
         os.makedirs(local_result_dir, exist_ok=True)
@@ -291,7 +306,8 @@ def main():
         log_folder=args.log_folder,
         suffix="remap"
     )
-    # res= prepare_and_remap_ktests(model_remap, TEMP_DIR, args.log_folder, docker_name, original_c_path, translated_c_path)
+    local_folder_name= args.log_folder+TEMP_DIR_LOCAL.replace("logic_bombs", "")
+    res= prepare_and_remap_ktests(model_remap, TEMP_DIR, local_folder_name, docker_name, original_c_path, translated_c_path)
     # print(f"[INFO] Remapped ktests saved in: {res}")
     #find all the tests
     #run all the tests on the 2 bc and collects the differences
@@ -301,7 +317,7 @@ def main():
     print(f"Original source instrumented executable: {replay_orig_simple_instrumented}")
     _, replay_ghost_simple_instrumented = instrument_source_in_docker(docker_name, TEMP_DIR, translated_c_path)
     print(f"Ghost source instrumented executable: {replay_ghost_simple_instrumented}")
-    local_folder_name= args.log_folder+TEMP_DIR_LOCAL.replace("logic_bombs", "")
+    
     run_tests_and_compare(TEMP_DIR, docker_name, orig_executable, ghost_executable, ghost_output_dir, "llvm_traces",local_folder_name)
     run_tests_and_compare(
         TEMP_DIR, docker_name,

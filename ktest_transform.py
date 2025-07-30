@@ -70,7 +70,7 @@ You will be provided with:
 
 1. The **original full C code**, which contains logic that has been transformed.
 2. The **transformed code region**, replacing a part of the original (marked with `assume_NL_start` and `assume_NL_stop`).
-3. One **example symbolic test case**  in the ktest format from running KLEE on the transformed version.
+3. One **example symbolic test case**  in the ktest format (just the test variable and its type).
 
 ---
 
@@ -127,7 +127,8 @@ Ensure:
 
 * Byte size is preserved (e.g., 4-byte float → 4-byte float).
 * Transformed expressions are **inverted** correctly (e.g., `x = pow(x+356, 2)` → `x = sqrt(x) - 356`)
-* You **only modify inputs relevant to the transformed region**.
+* You **only modify inputs relevant to the transformed region**
+* Any necessary imports are included.
 
 ---
 
@@ -156,11 +157,10 @@ Ensure:
 
 
 ---
-Don't focus only on the example test case. Use it as a guide to understand how the transformation works, but apply the same logic to any input that would be used in the original code by reversing the difference between the original and transformed code.
-The remapping function should be general enough to handle any input that would be used in the original code, not just the example provided.
+
 ## Your Output
 
-Return only the Python function `remap_testcase(...)` as described above.
+Return only the Python function `remap_testcase(...)` as described above with the necessary imports.
 """
 
 
@@ -196,10 +196,15 @@ def extract_remap_function(response: str) -> str | None:
     in_function = False
     collected = []
     for line in lines:
+
         if line.strip().startswith("def remap_testcase("):
             in_function = True
+        if line.startswith("import ") or line.startswith("from"):
+            collected.append(line.strip())
+        
         if in_function:
-            collected.append(line)
+            if line != "```":
+                collected.append(line)
     return "\n".join(collected).strip() if collected else None
 def save_remap_function(code: str, filepath: str = "remap_testcase.py"):
     with open(filepath, "w") as f:
@@ -248,7 +253,7 @@ def apply_remap_on_ktests(model, original_code, transformed_code, input_dir):
         remapped_inputs = remap_module.remap_testcase(original_inputs)
         print(f"Remapped inputs: {remapped_inputs} from original inputs: {original_inputs}")
 
-        new_name = os.path.splitext(os.path.basename(ktest_path))[0] + "_updated.ktest"
+        new_name = "remapped_"+os.path.splitext(os.path.basename(ktest_path))[0] + ".ktest"
         output_path = os.path.join(input_dir, new_name)
 
         write_ktest_file(ktest_path, remapped_inputs, output_path)

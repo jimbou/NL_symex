@@ -50,6 +50,46 @@ def prepare_and_remap_ktests(model, TEMP_DIR, local_log_folder, docker_name, ori
 
     return ktest_dir
 
+
+def docker_bash(docker_name, cmd, **kwargs):
+    return subprocess.run(["docker", "exec", docker_name, "bash", "-lc", cmd], **kwargs)
+
+def instrument_source_in_docker(docker_name, temp_dir, src_name):
+    """
+    Copy instrument_branches.py & trace_logger.h into container temp dir
+    and create an instrumented C file with TRACE() calls after assume_NL_stop().
+    Returns path to the instrumented C file in the container and built replay exe path.
+    """
+    #from the source name keep only the file name
+    src_name = os.path.basename(src_name)
+    src_name_prefix = src_name.replace(".c", "")
+    container_src = f"{temp_dir}/{src_name}"
+    container_instr = container_src.replace(".c", "_instr.c")
+    container_hdr = f"/home/klee/llvm_pass/trace.h"
+    container_py = f"/home/klee/llvm_pass/pass.py"
+    replay_exe = f"{temp_dir}/build_tmp/{src_name_prefix}/final_{src_name_prefix}_instr_replay"
+
+    # ensure build dir
+    docker_bash(docker_name, f"mkdir -p {temp_dir}/build_tmp_simple/{src_name_prefix}", check=True)
+
+    # copy helper files into the container
+    # subprocess.run(["docker", "cp", "instrument_branches.py", f"{docker_name}:{container_py}"], check=True)
+    # subprocess.run(["docker", "cp", "trace_logger.h", f"{docker_name}:{container_hdr}"], check=True)
+
+    # run instrumentation
+    docker_bash(docker_name, f"python3 {container_py} {container_src} {container_instr}", check=True)
+
+    # build replay exe linked with kleeRuntest (+ libm)
+    build_cmd = (
+        f"clang {container_instr} -I{temp_dir} "
+        f"-L/tmp/klee_build130stp_z3/lib -lkleeRuntest -lm "
+        f"-o {replay_exe}"
+    )
+    docker_bash(docker_name, build_cmd, check=True)
+
+    return container_instr, replay_exe
+    
+
 def run_replay_traces_with_mapping(TEMP_DIR, docker_name, orig_executable, ghost_executable, ktest_dir, trace_dir):
     container_trace_dir = f"{TEMP_DIR}/trace_logs"
     ktest_files = sorted(glob.glob(os.path.join(ktest_dir, "*.ktest")))
@@ -83,9 +123,9 @@ def run_replay_traces_with_mapping(TEMP_DIR, docker_name, orig_executable, ghost
     ])
 
 
-def run_tests_and_compare(TEMP_DIR, docker_name, orig_executable, ghost_executable, ghost_output_dir, args):
+def run_tests_and_compare(TEMP_DIR, docker_name, orig_executable, ghost_executable, ghost_output_dir, trace_logs, local_folder_name):
         print("📁 Creating trace output directory in container")
-        container_trace_dir = f"{TEMP_DIR}/trace_logs"
+        container_trace_dir = f"{TEMP_DIR}/{trace_logs}"
         subprocess.run(["docker", "exec", docker_name, "mkdir", "-p", container_trace_dir], check=True)
 
         print("🔎 Finding .ktest files in ghost output dir")
@@ -111,7 +151,7 @@ def run_tests_and_compare(TEMP_DIR, docker_name, orig_executable, ghost_executab
                     "docker", "exec", docker_name, "bash", "-c", cmd
                 ], check=True)
 
-        local_result_dir = os.path.join(args.log_folder, f"ghost_cmp_{uuid.uuid4().hex[:8]}")
+        local_result_dir = local_folder_name
         os.makedirs(local_result_dir, exist_ok=True)
 
         for remote_dir in [container_trace_dir, TEMP_DIR]:
@@ -122,7 +162,7 @@ def run_tests_and_compare(TEMP_DIR, docker_name, orig_executable, ghost_executab
             ], check=True)
         print("📤 Trace and output directories copied to:", local_result_dir)
 
-        summary_path = os.path.join(local_result_dir, "summary.txt")
+        summary_path = os.path.join(local_result_dir, f"summary_{trace_logs}.txt")
         trace_dir = os.path.join(local_result_dir, os.path.basename(container_trace_dir))
         with open(summary_path, "w") as fsum:
             for ktest in ktest_files:
@@ -251,13 +291,23 @@ def main():
         log_folder=args.log_folder,
         suffix="remap"
     )
-    res= prepare_and_remap_ktests(model_remap, TEMP_DIR, args.log_folder, docker_name, original_c_path, translated_c_path)
-    print(f"[INFO] Remapped ktests saved in: {res}")
+    # res= prepare_and_remap_ktests(model_remap, TEMP_DIR, args.log_folder, docker_name, original_c_path, translated_c_path)
+    # print(f"[INFO] Remapped ktests saved in: {res}")
     #find all the tests
     #run all the tests on the 2 bc and collects the differences
     #lift the ktest
-    run_tests_and_compare(TEMP_DIR, docker_name, orig_executable, ghost_executable, ghost_output_dir, args)
 
+    _, replay_orig_simple_instrumented = instrument_source_in_docker(docker_name, TEMP_DIR, original_c_path)
+    print(f"Original source instrumented executable: {replay_orig_simple_instrumented}")
+    _, replay_ghost_simple_instrumented = instrument_source_in_docker(docker_name, TEMP_DIR, translated_c_path)
+    print(f"Ghost source instrumented executable: {replay_ghost_simple_instrumented}")
+    local_folder_name= args.log_folder+TEMP_DIR_LOCAL.replace("logic_bombs", "")
+    run_tests_and_compare(TEMP_DIR, docker_name, orig_executable, ghost_executable, ghost_output_dir, "llvm_traces",local_folder_name)
+    run_tests_and_compare(
+        TEMP_DIR, docker_name,
+        replay_orig_simple_instrumented, replay_ghost_simple_instrumented,
+        ghost_output_dir, "simple_traces",local_folder_name
+    )
 
 if __name__ == "__main__":
     main()

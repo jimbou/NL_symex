@@ -4,7 +4,9 @@ import sys
 def instrument_c_file(input_path, output_path):
     with open(input_path, 'r') as f:
         lines = f.readlines()
-
+    #if include  /home/klee/llvm_pass/trace.h not in the file then add it in the first line
+    if not any('#include "/home/klee/llvm_pass/trace.h"' in line for line in lines):
+        lines.insert(0, '#include "/home/klee/llvm_pass/trace.h"\n')
     inside_nl = False
     branch_id = 0
     instrumented_lines = []

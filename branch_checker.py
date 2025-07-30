@@ -1,10 +1,11 @@
+import os
 def extract_branch_trace(filepath):
     trace = []
     with open(filepath, 'r') as f:
         for line in f:
-            if "Branch taken:" in line:
+            if "Branch taken: " in line:
                 try:
-                    num = int(line.strip().split("Branch taken:")[1].strip())
+                    num = int(line.strip().split("Branch taken: ")[1].strip())
                     trace.append(num)
                 except ValueError:
                     continue  # skip malformed lines
@@ -17,18 +18,26 @@ def extract_branch_trace(filepath):
     min_index = trace.index(min_value)
 
     # Return all values *after* the smallest one
-    return trace[min_index + 1:]
+    return trace[min_index:]
 
 
 def compare_traces(file1, file2):
+    #print checking if files exist
+    if not os.path.exists(file1) or not os.path.exists(file2):
+        print(f"One of the files does not exist: {file1} or {file2}")
+        return False
+    #print the path of the files
+    print(f"Comparing traces in {file1} and {file2}")
     trace1 = extract_branch_trace(file1)
     trace2 = extract_branch_trace(file2)
 
     if len(trace1) < 5 or len(trace2) < 5:
         if trace1 == trace2:
+            print(f"Trace1 is {trace1} and Trace2 is {trace2}.")
             print("Traces are identical.")
             return True
         else:
+            print(f"Trace1 is {trace1} and Trace2 is {trace2}.")
             print("Traces are not identical")
             return False
 
@@ -38,9 +47,11 @@ def compare_traces(file1, file2):
     print("First 5 after min in file1:", first_five_1)
     print("First 5 after min in file2:", first_five_2)
     if first_five_1 == first_five_2:
+        print(f"Trace1 is {trace1} and Trace2 is {trace2}.")
         print("First 5 after min are identical.")
         return True
     else:
+        print(f"Trace1 is {trace1} and Trace2 is {trace2}.")
         print("First 5 after min are not identical.")
 
         return False

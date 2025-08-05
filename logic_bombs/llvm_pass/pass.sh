@@ -5,6 +5,10 @@ if [ "$#" -ne 2 ]; then
   echo "Usage: $0 <program.c> <pass.cpp>"
   exit 1
 fi
+REBUILD_PASS=false
+if [ "$3" == "--rebuild-pass" ]; then
+  REBUILD_PASS=true
+fi
 
 PROGRAM_SRC="$1"
 PASS_SRC="$2"
@@ -43,10 +47,18 @@ INSTRUMENTED_BC="$WORKDIR/${BASE_NAME}_instrumented.bc"
 BRANCH_LOGGER_BC="$WORKDIR/branch_logger_${BASE_NAME}.bc"
 FINAL_BC="$WORKDIR/final_${BASE_NAME}.bc"
 
-echo "🔧 Compiling LLVM pass"
-clang++ -fno-rtti -shared -fPIC \
-  -I$(llvm-config --includedir) \
-  "$PASS_SRC" -o "$PASS_SO"
+
+
+
+
+if [ "$REBUILD_PASS" = true ]; then
+  echo "🔧 Compiling LLVM pass"
+  clang++ -fno-rtti -shared -fPIC \
+    -I$(llvm-config --includedir) \
+    "$PASS_SRC" -o "$PASS_SO"
+else
+  echo "⚠️  Skipping LLVM pass rebuild. Using existing $PASS_SO"
+fi
 
 echo "📦 Compiling program to bitcode"
 clang -emit-llvm -c -g -O0 "$PROGRAM_SRC" -o "$PROGRAM_BC"

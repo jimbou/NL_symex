@@ -91,3 +91,12 @@ source /home/jim/NL_constraints/venv/bin/activate
 ls
 pwd
 exit
+source /home/jim/NL_constraints/venv/bin/activate
+ls
+cd llvm_pass/
+chmod +x pass_reach.sh 
+./pass_reach.sh program1.c Reachability_pass.cpp 
+./pass_reach.sh program1.c Reachability_pass.cpp --rebuild-pass
+export LD_LIBRARY_PATH=/tmp/klee_build130stp_z3/lib:$LD_LIBRARY_PATH && KTEST_FILE=test000001.ktest ./build_tmp/program1_reach/final_program1_replay 
+./pass_reach.sh program1.c Reachability_pass.cpp 
+exit

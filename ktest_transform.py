@@ -6,6 +6,97 @@ import importlib.util
 import os
 from ktest import read_ktest_structured, format_ktest_as_string, write_ktest_file
 
+ktest_inverse_prompt_minimal_stub = """
+You are a symbolic execution assistant. Your task is to **reconstruct inputs for the original C code** based on the behavior of a **minimal stub replacement**.
+
+---
+
+## Context
+
+We originally replaced a complex or difficult code region in a C program (e.g., complex loops, math libraries, or external I/O) with a **minimal no-op placeholder**, just to make the program compilable and executable under KLEE. For example, this region may now contain only variable declarations or dummy assignments.
+
+We then ran KLEE on this simplified version, which produced some test inputs (symbolic values). These inputs are not valid for the **original** code, which contains real logic in the removed region.
+
+Now, we want to **invert the original code logic** to recover valid inputs from the test outputs. In essence:
+
+> We are treating the original removed code block as a function `f(x) = y`, and trying to compute `x = f⁻¹(y)` using known observed values.
+
+---
+
+## Your Input
+
+You will be provided with:
+
+1. The **full original C code**, including the difficult code block between markers `assume_NL_start();` and `assume_NL_stop();`
+2. The **minimal replacement region**, which was used instead of the original code to allow KLEE analysis.
+3. One symbolic test case (`ktest` style) in dictionary format. The values in this test case are the ones observed **after** the simplified code (e.g., symbolic variables reintroduced with dummy values).
+
+---
+
+## Your Task
+
+Write a Python function that **inverts the logic of the original code region** to reconstruct a plausible set of symbolic input values for the original code.
+
+The mapping should:
+- Assume the minimal region had no logic, so any values produced were directly symbolic
+- Use the original code's logic to infer which input values would have produced those same values
+- Only transform variables that appear inside or after the removed code region
+- Maintain the correct type and byte length (e.g., 4 bytes for `float`, 1 byte for `char`, etc.)
+
+---
+
+## Output Format
+
+Write a single Python function like this:
+
+```python
+def remap_testcase_simple(inputs: dict[str, list[int]]) -> dict[str, list[int]]:
+````
+
+Your function:
+
+
+* Accepts a dictionary where each value is a list of bytes (from a `.ktest` file).
+* Converts the relevant values (e.g., reconstruct floats, apply inverse math).
+* Returns a new dictionary in the same format, containing remapped bytes.
+
+
+Include any necessary `struct`, `math`, or other imports.
+
+---
+
+## Inputs
+
+### Original C Code:
+
+```c
+{FULL_ORIGINAL_CODE}
+```
+
+---
+
+### Minimal Replacement Code:
+
+```c
+{MINIMAL_CODE}
+```
+
+---
+
+### KLEE ktest Test Case:
+
+```
+{TESTCASE_AS_DICT}
+```
+
+---
+
+## Output
+
+Return only the Python function `remap_testcase(...)`. Do not include any extra text.
+"""
+
+
 def read_ktest_file(file_path):
     """
     Reads a .ktest file and extracts input variables as a dictionary.
@@ -176,6 +267,17 @@ def build_ktest_mapping_prompt(original_code: str, transformed_code: str, ktest_
         TESTCASE_AS_DICT=str(ktest_inputs)
     )
 
+def build_ktest_mapping_prompt_simple(original_code: str, minimal_code: str, ktest_inputs: dict) -> str:
+    """
+    Constructs a prompt for the LLM to determine whether remapping of KLEE test inputs is needed,
+    and if so, to return a Python function to do the remapping.
+    """
+    return ktest_inverse_prompt_minimal_stub.format(
+        FULL_ORIGINAL_CODE=original_code,
+        MINIMAL_CODE=minimal_code,
+        TESTCASE_AS_DICT=str(ktest_inputs)
+    )
+
 import re
 
 def extract_remap_function(response: str) -> str | None:
@@ -258,3 +360,59 @@ def apply_remap_on_ktests(model, original_code, transformed_code, input_dir):
 
         write_ktest_file(ktest_path, remapped_inputs, output_path)
         print(f"Transformed {ktest_path} -> {output_path}")
+
+
+
+
+
+def apply_remap_on_single_ktest(model, original_code, minimal_code, input_dir, ktest_path):
+    assert os.path.exists(ktest_path), f"KTest path {ktest_path} does not exist."
+
+    # input_dir = os.path.dirname(ktest_path)
+    remap_code_path = os.path.join(input_dir, "remap_testcase_simple.py")
+
+    if os.path.exists(remap_code_path):
+        print(f"[INFO] Found existing remap_testcase_simple.py at {remap_code_path}. Skipping model generation.")
+    else:
+        print(f"[INFO] No remap_testcase_simple.py found. Generating with model...")
+        ktest_info = read_ktest_structured(ktest_path)
+        ktest_str = format_ktest_as_string(ktest_info)
+
+        prompt = build_ktest_mapping_prompt(
+            original_code=original_code,
+            minimal_code=minimal_code,
+            ktest_inputs=ktest_str
+        )
+        resp = model.query(prompt)
+        remap_code = extract_remap_function(resp)
+
+        if remap_code is None:
+            print("No remapping code extracted. Skipping remap.")
+            return
+
+        save_remap_function(remap_code, remap_code_path)
+
+    # Import remap function
+    spec = importlib.util.spec_from_file_location("remap_testcase_simple", remap_code_path)
+    remap_module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(remap_module)
+
+    # Apply remapping
+    ktest_dict = read_ktest_structured(ktest_path)
+    original_inputs = {obj["name"]: obj["bytes"] for obj in ktest_dict["objects"]}
+    remapped_inputs = remap_module.remap_testcase(original_inputs)
+    print(f"[INFO] Remapped inputs: {remapped_inputs} from original inputs: {original_inputs}")
+
+    # Save output
+    base = os.path.splitext(os.path.basename(ktest_path))[0]
+    output_path = os.path.join(input_dir, f"remapped_simple_{base}.ktest")
+    #if it already exists, add a counter after the remapped_simple_
+    if os.path.exists(output_path):
+        print(f"[WARNING] Output path {output_path} already exists. Adding counter.")
+        counter = 1
+        while os.path.exists(output_path):
+            output_path = os.path.join(input_dir, f"remapped_simple_{base}_{counter}.ktest")
+            counter += 1
+    write_ktest_file(ktest_path, remapped_inputs, output_path)
+
+    print(f"[✅] Remapped {ktest_path} → {output_path}")

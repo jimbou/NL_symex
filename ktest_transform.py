@@ -5,6 +5,7 @@ import struct
 import importlib.util
 import os
 from ktest import read_ktest_structured, format_ktest_as_string, write_ktest_file
+import subprocess
 
 ktest_inverse_prompt_minimal_stub = """
 You are a symbolic execution assistant. Your task is to **reconstruct inputs for the original C code** based on the behavior of a **minimal stub replacement**.
@@ -312,7 +313,7 @@ def save_remap_function(code: str, filepath: str = "remap_testcase.py"):
     with open(filepath, "w") as f:
         f.write(code)
 
-def apply_remap_on_ktests(model, original_code, transformed_code, input_dir):
+def apply_remap_on_ktests(model, original_code, transformed_code, input_dir, remap_path=None):
 
 
     remap_code_path = os.path.join(input_dir, "remap_testcase.py")
@@ -331,13 +332,18 @@ def apply_remap_on_ktests(model, original_code, transformed_code, input_dir):
     #     ktest_total_str += k_test_string + "\n"
 
     # print(f"[INFO] Original inputs: {ktest_str}")
-    prompt= build_ktest_mapping_prompt(
-        original_code=original_code,
-        transformed_code=transformed_code,
-        ktest_inputs=ktest_str
-    )
-    resp= model.query(prompt)
-    remap_code= extract_remap_function(resp)
+    if remap_path and os.path.exists(remap_path):
+        remap_code = open(remap_path).read()
+        print(f"[INFO] Found existing remap_testcase.py at {remap_path}. Skipping model generation.")
+    else:
+        print(f"[INFO] No remap_testcase.py found. Generating with model...")
+        prompt= build_ktest_mapping_prompt(
+            original_code=original_code,
+            transformed_code=transformed_code,
+            ktest_inputs=ktest_str
+        )
+        resp= model.query(prompt)
+        remap_code= extract_remap_function(resp)
     if remap_code is None:
         print("No translation needed. Skipping transformation.")
         return
@@ -363,6 +369,58 @@ def apply_remap_on_ktests(model, original_code, transformed_code, input_dir):
 
 
 
+def get_covered_lines_for_ktest(docker_name, exe_path, c_file_path, ktest_path):
+    """
+    Runs one ktest on ghost_coverage inside docker and returns a set of covered line numbers.
+    """
+    coverage_dir = os.path.dirname(exe_path)
+    profraw = f"{coverage_dir}/single.profraw"
+    profdata = f"{coverage_dir}/single.profdata"
+    cov_output = f"{coverage_dir}/single_cov.txt"
+
+    # Run test with profile output
+    replay_cmd = (
+        f"cd {coverage_dir} && "
+        f"export LD_LIBRARY_PATH=/tmp/klee_build130stp_z3/lib:$LD_LIBRARY_PATH && "
+        f"LLVM_PROFILE_FILE={profraw} "
+        f"KTEST_FILE={ktest_path} {exe_path}"
+    )
+    docker_bash(docker_name, replay_cmd, check=True)
+
+    # Merge to profdata
+    docker_bash(docker_name, f"llvm-profdata merge -sparse {profraw} -o {profdata}", check=True)
+
+    # Show coverage to text file
+    cov_cmd = (
+        f"llvm-cov show {exe_path} "
+        f"-instr-profile={profdata} "
+        f"--path-equivalence . "
+        f"-format=text {c_file_path} > {cov_output}"
+    )
+    docker_bash(docker_name, cov_cmd, check=True)
+
+    # Retrieve and parse covered lines
+    result = subprocess.run(
+        ["docker", "exec", docker_name, "cat", cov_output],
+        capture_output=True,
+        text=True,
+        check=True
+    )
+
+    covered_lines = set()
+    for line in result.stdout.splitlines():
+        parts = line.split("|", 2)
+        if len(parts) < 3:
+            continue
+        try:
+            lineno = int(parts[0].strip())
+        except ValueError:
+            continue
+        count_str = parts[1].strip()
+        if count_str != "0" and not count_str.startswith("#####"):
+            covered_lines.add(lineno)
+
+    return covered_lines
 
 
 def apply_remap_on_single_ktest(model, original_code, minimal_code, input_dir, ktest_path):

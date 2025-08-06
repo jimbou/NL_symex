@@ -17,10 +17,60 @@ import shutil
 import glob
 import subprocess
 from ktest_transform import apply_remap_on_ktests
-from cov_line_coverage import get_uncovered_lines_in_docker
+from cov_line_coverage import get_uncovered_lines_in_docker, get_covered_lines_for_ktest
 from reach_Nl_start import get_ktests_that_do_not_reach_nl_start
+from map_line_numbers import relaxed_line_map
 
-def prepare_and_remap_ktests(model, TEMP_DIR, local_log_folder, docker_name, original_code_path, transformed_code_path):
+
+def find_tests_covering_ghost_lines(
+    docker_name,
+    ghost_output_dir,
+    ghost_c_path_inside_docker,
+    target_orig_lines
+):
+    """
+    For each (orig_lineno, ghost_lineno) in target_orig_lines,
+    find all .ktest files in ghost_output_dir that cover ghost_lineno.
+
+    Returns:
+        dict mapping (orig_lineno, ghost_lineno) -> list of ktest paths
+    """
+
+    result_map = {}
+
+    # List all ktest files inside the container
+    ktest_list_proc = subprocess.run(
+        ["docker", "exec", docker_name, "bash", "-lc", f"ls {ghost_output_dir}/*.ktest"],
+        capture_output=True,
+        text=True,
+        check=True
+    )
+    ktest_files = ktest_list_proc.stdout.strip().splitlines()
+
+    ghost_exe_path = f"{os.path.dirname(ghost_c_path_inside_docker)}/ghost_coverage"
+
+    for orig_lineno, ghost_lineno in target_orig_lines:
+        covering_tests = []
+        for ktest in ktest_files:
+            covered_lines = get_covered_lines_for_ktest(
+                docker_name,
+                ghost_exe_path,
+                ghost_c_path_inside_docker,
+                ktest
+            )
+            if ghost_lineno in covered_lines:
+                covering_tests.append(ktest)
+        result_map[(orig_lineno, ghost_lineno)] = covering_tests
+
+    # Print results
+    for (orig_ln, ghost_ln), tests in result_map.items():
+        print(f"Original line {orig_ln} (Ghost line {ghost_ln}) is covered only in ghost by tests:")
+        for t in tests:
+            print(f"  {t}")
+
+    return result_map
+
+def prepare_and_remap_ktests(model, TEMP_DIR, local_log_folder, docker_name, original_code_path, transformed_code_path, remap_path=None):
     # Step 1: Copy all ktests from container to local
     ghost_output_dir = os.path.join(TEMP_DIR, "ghost_out-0")
     local_ktest_dir = os.path.join(local_log_folder, "local_ktests")
@@ -40,7 +90,11 @@ def prepare_and_remap_ktests(model, TEMP_DIR, local_log_folder, docker_name, ori
     ktest_dir = os.path.join(local_ktest_dir, "ghost_out-0")
 
     # Step 2: Remap ktests (generates _updated.ktest files)
-    apply_remap_on_ktests(model, original_code, transformed_code, ktest_dir)
+    if remap_path:
+        print(f"[INFO] Using remap path: {remap_path}")
+        apply_remap_on_ktests(model, original_code, transformed_code, ktest_dir, remap_path)
+    else:
+        apply_remap_on_ktests(model, original_code, transformed_code, ktest_dir)
 
     # Step 3: Copy original and remapped tests back to container
     print("[INFO] Copying ktest files back into container...")
@@ -264,6 +318,7 @@ def main():
     parser.add_argument("--log_folder", default="log_tmp_ghost", help="Folder to save logs and results")
     parser.add_argument("--docker_name", default="klee_logic_bombs", help="Docker container name")
     parser.add_argument("--model_name", default="gpt-4.1", help="Model name for KLEE main generation")
+    parser.add_argument("--remap_path", required=False, help="Path to remap file for ghost code")
 
     args = parser.parse_args()
     docker_name = args.docker_name
@@ -320,8 +375,14 @@ def main():
         suffix="remap"
     )
     local_folder_name= args.log_folder+TEMP_DIR_LOCAL.replace("logic_bombs", "")
-    res= prepare_and_remap_ktests(model_remap, TEMP_DIR, local_folder_name, docker_name, original_c_path, translated_c_path)
-    # print(f"[INFO] Remapped ktests saved in: {res}")
+    if args.remap_path:
+        print(f"[INFO] Using remap path: {args.remap_path}")
+        res= prepare_and_remap_ktests(model_remap, TEMP_DIR, local_folder_name, docker_name, original_c_path, translated_c_path,args.remap_path)
+
+    else:
+        print(f"[INFO] Using default remap path: {model_remap}")
+        res= prepare_and_remap_ktests(model_remap, TEMP_DIR, local_folder_name, docker_name, original_c_path, translated_c_path)
+        # print(f"[INFO] Remapped ktests saved in: {res}")
     #find all the tests
     #run all the tests on the 2 bc and collects the differences
     #lift the ktest
@@ -337,8 +398,8 @@ def main():
         replay_orig_simple_instrumented, replay_ghost_simple_instrumented,
         ghost_output_dir, "simple_traces",local_folder_name
     )
-    uncovered = get_uncovered_lines_in_docker(docker_name, ghost_output_dir, translated_c_path_inside_docker)
-
+    uncovered = get_uncovered_lines_in_docker(docker_name, ghost_output_dir, original_c_path_inside_docker)
+    uncovered_lines_orig= {lineno for lineno, content in uncovered if lineno is not None and content is not None}
     print("Uncovered lines:")
     for lineno, content in uncovered:
         print(f"{lineno}: {content}")
@@ -351,5 +412,34 @@ def main():
     print("Finding ktests that do not reach assume_NL_start...")
     dont_reach_start=get_ktests_that_do_not_reach_nl_start(docker_name, ghost_reachability, ghost_output_dir)
     print(f"KTests that do NOT reach assume NL start: {dont_reach_start}")
+
+
+    map_ghost_to_orig, map_orig_to_ghost = relaxed_line_map(translated_c_path, original_c_path)
+    uncovered_ghost =get_uncovered_lines_in_docker(docker_name, ghost_output_dir, translated_c_path_inside_docker)
+    uncovered_lines_ghost = {lineno for lineno, content in uncovered_ghost if lineno is not None and content is not None}
+
+    # 3. Find lines uncovered in original but covered in ghost
+    target_orig_lines = []
+    for orig_lineno in uncovered_lines_orig:
+        ghost_lineno = map_orig_to_ghost.get(orig_lineno, -1)
+        if ghost_lineno != -1 and ghost_lineno not in uncovered_lines_ghost:
+            target_orig_lines.append((orig_lineno, ghost_lineno))
+
+    print("Lines uncovered in original but covered in ghost:")
+    for orig_lineno, ghost_lineno in target_orig_lines:
+        print(f"Original line {orig_lineno} -> Ghost line {ghost_lineno}")
+
+    result_map = find_tests_covering_ghost_lines(
+        docker_name,
+        ghost_output_dir,
+        translated_c_path_inside_docker,
+        target_orig_lines
+    )
+    print("Tests covering ghost lines:")
+    for (orig_lineno, ghost_lineno), tests in result_map.items():
+        print(f"Original line {orig_lineno} (Ghost line {ghost_lineno}) is covered by tests:")
+        for t in tests:
+            print(f"  {t}")
+
 if __name__ == "__main__":
     main()

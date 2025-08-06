@@ -22,7 +22,7 @@ def create_model_log_based_name(model_name, log_folder, suffix):
     return get_model(model_name, 0.5, log_folder_new)
 
 
-def get_uncovered_from_container(container_name, c_path_inside_container):
+def get_uncovered_from_container(container_name, c_path_inside_container, klee_run_dir=None):
     try:
         # Start the container
         subprocess.run(["docker", "start", container_name], check=True)
@@ -31,10 +31,18 @@ def get_uncovered_from_container(container_name, c_path_inside_container):
         print(f"Running in container {container_name}: python3 /home/klee/get_klee_coverage.py {c_path_inside_container}")
 
         # Run the coverage script inside the container
-        result = subprocess.run([
-            "docker", "exec", container_name,
-            "python3", "/home/klee/get_klee_coverage.py", c_path_inside_container
-        ], capture_output=True, text=True, check=True)
+        if klee_run_dir:
+            result = subprocess.run([
+                "docker", "exec", container_name,
+                "python3", "/home/klee/get_klee_coverage.py", c_path_inside_container , klee_run_dir
+            ], capture_output=True, text=True, check=True)
+
+
+        else:
+            result = subprocess.run([
+                "docker", "exec", container_name,
+                "python3", "/home/klee/get_klee_coverage.py", c_path_inside_container
+            ], capture_output=True, text=True, check=True)
 
         # Capture and display stdout
         output = result.stdout.strip()

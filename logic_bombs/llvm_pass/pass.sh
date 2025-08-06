@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-if [ "$#" -ne 2 ]; then
+if [ "$#" -lt 2 ]; then
   echo "Usage: $0 <program.c> <pass.cpp>"
   exit 1
 fi
@@ -58,6 +58,8 @@ if [ "$REBUILD_PASS" = true ]; then
     "$PASS_SRC" -o "$PASS_SO"
 else
   echo "⚠️  Skipping LLVM pass rebuild. Using existing $PASS_SO"
+ 
+  cp "llvm_pass/passes/$(basename "$PASS_SO")" "$PASS_SO"
 fi
 
 echo "📦 Compiling program to bitcode"

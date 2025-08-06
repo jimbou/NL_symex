@@ -46,6 +46,7 @@ if [ "$REBUILD_PASS" = true ]; then
     "$PASS_SRC" -o "$PASS_SO"
 else
   echo "⚠️  Skipping LLVM pass rebuild. Using existing $PASS_SO"
+  cp "llvm_pass/passes/$(basename "$PASS_SO")" "$PASS_SO"
 fi
 
 echo "📦 Compiling program to LLVM bitcode"
@@ -63,9 +64,9 @@ llvm-link "$INSTRUMENTED_BC" "$REACH_LOGGER_BC" -o "$FINAL_BC"
 echo "✅ Final KLEE-compatible bitcode: $FINAL_BC"
 
 # Optional: Build native executable for replay
-REPLAY_BC="$WORKDIR/final_${BASE_NAME}_replay.bc"
-REPLAY_S="$WORKDIR/final_${BASE_NAME}_replay.s"
-REPLAY_EXE="$WORKDIR/final_${BASE_NAME}_replay"
+REPLAY_BC="$WORKDIR/reachability_${BASE_NAME}_replay.bc"
+REPLAY_S="$WORKDIR/reachability_${BASE_NAME}_replay.s"
+REPLAY_EXE="$WORKDIR/reachability_${BASE_NAME}_replay"
 
 llvm-link "$INSTRUMENTED_BC" "$REACH_LOGGER_BC" -o "$REPLAY_BC"
 llc "$REPLAY_BC" -o "$REPLAY_S"

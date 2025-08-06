@@ -81,6 +81,40 @@ def parse_klee_stats(output_dir):
         metrics["uncovered_lines"] = uncovered_lines
         metrics["unreached_functions"] = len(unreached_funcs)
     return metrics
+import os
+
+def find_tests_covering_line(source_filename, target_lineno, klee_output_dir):
+    """
+    Given a source filename, target line number, and KLEE output directory,
+    returns a list of test (.cov) files that cover that line.
+    """
+    test_names = []
+    source_basename = os.path.basename(source_filename)
+
+    for file in os.listdir(klee_output_dir):
+        if not file.endswith(".cov"):
+            continue
+
+        cov_path = os.path.join(klee_output_dir, file)
+
+        with open(cov_path, "r", encoding="utf-8") as f:
+            for line in f:
+                if ':' in line:
+                    try:
+                        filename, lineno = line.strip().rsplit(":", 1)
+                        if os.path.basename(filename) == source_basename and int(lineno) == target_lineno:
+                            test_names.append(file)
+                            break  # No need to check rest of this file
+                    except ValueError:
+                        continue
+
+    #find the full paths of the test names
+    test_names = [os.path.join(klee_output_dir, name) for name in test_names]
+    #replace .cov with.ktest
+    test_names = [name.replace(".cov", ".ktest") for name in test_names]
+    #remove duplicates
+    return test_names
+
 
 def extract_all_covered_lines(klee_output_dir):
     """Extracts all covered line numbers from .cov files in the KLEE output directory."""
@@ -194,19 +228,37 @@ def get_uncovered(c_file_path):
     return uncovered
 
 def main():
-    if len(sys.argv) != 2:
-        print("Usage: python run_klee_metrics.py <path_to_c_file>")
+    # test_names=find_tests_covering_line("/home/jim/NL_constraints/logic_bombs/tmp_ghost_ffa672dd/ghost.c", 15, "/home/jim/NL_constraints/logic_bombs/tmp_ghost_ffa672dd/ghost_out-0")
+    # print(test_names)
+    if len(sys.argv) < 2 or len(sys.argv) > 3:
+        print("Usage: python run_klee_metrics.py <path_to_c_file> --optional_klee run dir")
         return
-
+    
+    if len(sys.argv) == 3 :
+        rerun_klee = False
+        klee_run_dir = sys.argv[2]
+        if not os.path.isdir(klee_run_dir):
+            print(f"Error: KLEE run directory not found: {klee_run_dir}")
+            return
+    
+    else:
+        rerun_klee=True
     c_file_path = sys.argv[1]
     if not os.path.isfile(c_file_path):
         print(f"Error: File not found: {c_file_path}")
         return
 
     try:
-        bc_file_path = compile_to_bc(c_file_path)
-        output_dir = get_next_output_dir()
-        run_klee(bc_file_path, output_dir)
+        if rerun_klee:
+            # Compile to .bc
+            bc_file_path = compile_to_bc(c_file_path)
+            # Run KLEE
+            output_dir = get_next_output_dir()
+            run_klee(bc_file_path, output_dir)
+        else:
+            # Use the provided KLEE run directory
+            output_dir = klee_run_dir
+        
         # metrics = parse_klee_stats(output_dir)
         covered, uncovered =analyze_coverage(c_file_path,output_dir )
 

@@ -17,6 +17,8 @@ import shutil
 import glob
 import subprocess
 from ktest_transform import apply_remap_on_ktests
+from cov_line_coverage import get_uncovered_lines_in_docker
+from reach_Nl_start import get_ktests_that_do_not_reach_nl_start
 
 def prepare_and_remap_ktests(model, TEMP_DIR, local_log_folder, docker_name, original_code_path, transformed_code_path):
     # Step 1: Copy all ktests from container to local
@@ -189,6 +191,7 @@ def run_tests_and_compare(TEMP_DIR, docker_name, orig_executable, ghost_executab
                     fsum.write(f"{name}: {'MATCH' if match else 'MISMATCH'}\n")
 
         print("✅ Comparison finished. Summary written to:", summary_path)
+        return summary_path
 
     # Call it
 KLEE_BIN = "/tmp/klee_build130stp_z3/bin/klee"
@@ -296,10 +299,20 @@ def main():
             "docker", "exec", docker_name, "/home/klee/llvm_pass/pass.sh",
             f"{TEMP_DIR}/{name}.c", "/home/klee/llvm_pass/BranchTracePass.cpp"
         ], check=True)
-
+# ,"--rebuild-pass"
+    # Instrumenting with reachability pass
+    print("🛠️  Instrumenting with reachability pass")
+    for name in ["orig", "ghost"]:
+        subprocess.run([
+            "docker", "exec", docker_name, "/home/klee/llvm_pass/pass_reach.sh",
+            f"{TEMP_DIR}/{name}.c", "/home/klee/llvm_pass/Reachability_pass.cpp"
+        ], check=True)
     # Paths to executable files
     orig_executable = os.path.join(TEMP_DIR, "build_tmp", "orig", f"final_orig_replay")
     ghost_executable = os.path.join(TEMP_DIR, "build_tmp", "ghost", f"final_ghost_replay")
+
+    orig_reachability= os.path.join(TEMP_DIR, "build_tmp", "orig_reach", f"reachability_orig_replay")
+    ghost_reachability= os.path.join(TEMP_DIR, "build_tmp", "ghost_reach", f"reachability_ghost_replay")
 
     model_remap= create_model_log_based_name(
         model_name=args.model_name,
@@ -318,12 +331,25 @@ def main():
     _, replay_ghost_simple_instrumented = instrument_source_in_docker(docker_name, TEMP_DIR, translated_c_path)
     print(f"Ghost source instrumented executable: {replay_ghost_simple_instrumented}")
     
-    run_tests_and_compare(TEMP_DIR, docker_name, orig_executable, ghost_executable, ghost_output_dir, "llvm_traces",local_folder_name)
-    run_tests_and_compare(
+    summary_path_complex= run_tests_and_compare(TEMP_DIR, docker_name, orig_executable, ghost_executable, ghost_output_dir, "llvm_traces",local_folder_name)
+    summary_path_simple= run_tests_and_compare(
         TEMP_DIR, docker_name,
         replay_orig_simple_instrumented, replay_ghost_simple_instrumented,
         ghost_output_dir, "simple_traces",local_folder_name
     )
+    uncovered = get_uncovered_lines_in_docker(docker_name, ghost_output_dir, translated_c_path_inside_docker)
 
+    print("Uncovered lines:")
+    for lineno, content in uncovered:
+        print(f"{lineno}: {content}")
+
+    if len(uncovered)==0:
+        print("All lines covered!")
+        # return 
+
+    #lets find out if the ktests all reach the assume_NL_start
+    print("Finding ktests that do not reach assume_NL_start...")
+    dont_reach_start=get_ktests_that_do_not_reach_nl_start(docker_name, ghost_reachability, ghost_output_dir)
+    print(f"KTests that do NOT reach assume NL start: {dont_reach_start}")
 if __name__ == "__main__":
     main()

@@ -1,0 +1,7 @@
+Error: invalid klee_assume call (provably false)
+File: orig_minimal_prefix.c
+Line: 38
+assembly.ll line: 102
+State: 2
+Stack: 
+	#000000102 in main() at orig_minimal_prefix.c:38

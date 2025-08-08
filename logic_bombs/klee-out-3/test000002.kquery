@@ -1,0 +1,6 @@
+array s[4] : w32 -> w8 = symbolic
+(query [(Sle 0
+              N0:(SExt w32 (Read w8 0 s)))
+         (Eq false
+             (Slt (Add w32 4294967248 N0) 0))]
+        false)

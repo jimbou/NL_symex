@@ -20,7 +20,8 @@ from ktest_transform import apply_remap_on_ktests
 from cov_line_coverage import get_uncovered_lines_in_docker, get_covered_lines_for_ktest
 from reach_Nl_start import get_ktests_that_do_not_reach_nl_start
 from map_line_numbers import relaxed_line_map
-
+from get_minimal import get_minimal, get_minimal_prefix, get_reachable_line_klee, get_reachable_line_simple
+from find_relaxed_pre_solution import add_relaxed_klee_assume
 
 def find_tests_covering_ghost_lines(
     docker_name,
@@ -319,7 +320,8 @@ def main():
     parser.add_argument("--docker_name", default="klee_logic_bombs", help="Docker container name")
     parser.add_argument("--model_name", default="gpt-4.1", help="Model name for KLEE main generation")
     parser.add_argument("--remap_path", required=False, help="Path to remap file for ghost code")
-
+    parser.add_argument("--minimal_file", required=False, help="Path to minimal file for symex")
+    parser.add_argument("--minimal_prefix_file", required=False, help="Path to minimal prefix file for symex")
     args = parser.parse_args()
     docker_name = args.docker_name
 
@@ -440,6 +442,101 @@ def main():
         print(f"Original line {orig_lineno} (Ghost line {ghost_lineno}) is covered by tests:")
         for t in tests:
             print(f"  {t}")
+
+
+    minimal_file_path= original_c_path.replace(".c", "_minimal.c")
+    minimal_prefix_file_path= original_c_path.replace(".c", "_minimal_prefix.c")
+    if len(result_map)>= 0: #change this only to >
+        minimal_log_path = os.path.join(args.log_folder, os.path.basename(minimal_file_path))
+
+        if args.minimal_file:
+            #copy the minimal file to the minimal_file_path
+            shutil.copyfile(args.minimal_file, minimal_log_path)
+            shutil.copyfile(args.minimal_file, minimal_file_path)
+        else:
+            model_minimal = create_model_log_based_name(
+                model_name=args.model_name,
+                log_folder=args.log_folder,
+                suffix="minimal"
+            )
+            print(f"[INFO] Using model to get the minimal file from original file: {original_c_path}")
+            minimal_code = get_minimal(
+                model_minimal,
+                original_c_path, minimal_file_path
+                )
+            print(f"[INFO] Minimal code saved to: {minimal_file_path}")
+            #save it also to the log_folder with the same base name
+            with open(minimal_log_path, "w") as f:
+                f.write(minimal_code)
+        map_orig_to_minimal, map_minimal_to_orig = relaxed_line_map( original_c_path,minimal_log_path)
+
+
+        minimal_prefix_log_path = os.path.join(args.log_folder, os.path.basename(minimal_prefix_file_path))
+
+        if args.minimal_prefix_file:
+            #copy the minimal file to the minimal_file_path
+            shutil.copyfile(args.minimal_prefix_file, minimal_prefix_log_path)
+            shutil.copyfile(args.minimal_prefix_file, minimal_prefix_file_path)
+        else:
+            
+            print(f"[INFO] Using custom logic to get the minimal prefix file from original file: {original_c_path}")
+            minimal_code_prefix = get_minimal_prefix(
+                
+                original_c_path
+            )
+            print(f"[INFO] Minimal code saved to: {minimal_prefix_file_path}")
+            #save it also to the log_folder with the same base name
+            with open(minimal_prefix_log_path, "w") as f:
+                f.write(minimal_code_prefix)
+
+    code_with_reachable_line_simple = get_reachable_line_simple(original_c_path, 16)
+    # print(f"[INFO] Code with reachable line (simple): {code_with_reachable_line_simple}")
+    #print the map original to minimal
+    # print(f"[INFO] Map from original to minimal lines: {map_orig_to_minimal}")
+    # print(f"[INFO] Map from minimal to original lines: {map_minimal_to_orig}")
+    code_with_reachable_line_klee = get_reachable_line_klee(minimal_log_path, map_orig_to_minimal[16])
+    # print(f"[INFO] Code with reachable line (KLEE): {code_with_reachable_line_klee}")
+    #save both to files
+
+
+    #use /home/jim/NL_constraints/logic_bombs/make_klee_executable.sh to make the code_rechable_line_simple replayable
+
+    #use bc comiple and then klee to explore the code_with_reachable_line_klee
+
+    #minimal is a simple replacement of the original code, so we can use it directly without the difficult part
+    #mininal p[refix is to explore on klee with just up to the prefix
+    #code with reachable line simple is to explore on the original code if we reach the line we want
+    #code with reachable line klee is to find a solution that reaches the line we want in the minimal code potentially in the future will add some klee_assume abs to make it similar to the solution we want but for that solution we want we must first calculate it by running on the original line simple
+
+
+    with open(os.path.join(args.log_folder, "reachable_line_simple.c"), "w") as f:
+        f.write(code_with_reachable_line_simple)
+    with open(os.path.join(args.log_folder, "reachable_line_klee.c"), "w") as f:
+        f.write(code_with_reachable_line_klee)
+    print(f"[INFO] Saved reachable lines to log folder: {args.log_folder}")
+
+    # add_relaxed_klee_assume("/home/jim/NL_constraints/test000001.ktest", minimal_prefix_log_path, docker_name)
+    #while the result map is not empty, pick a line in the original that is not covered and  a test case that covers it in ghost
+    while target_orig_lines:
+        orig_lineno, ghost_lineno = target_orig_lines.pop(0)
+        tests = result_map.get((orig_lineno, ghost_lineno), [])
+        if not tests:
+            print(f"No tests found covering original line {orig_lineno} (Ghost line {ghost_lineno})")
+            continue
+
+        # Pick the first test that covers this line
+        ktest_path = tests[0]
+        print(f"Using test {ktest_path} to cover original line {orig_lineno} (Ghost line {ghost_lineno})")
+        add_relaxed_klee_assume(ktest_path, minimal_file_path, docker_name)
+
+        code_with_reachable_line_simple = get_reachable_line_simple(original_c_path, orig_lineno)
+        code_with_reachable_line_klee = get_reachable_line_klee(original_c_path, map_orig_to_minimal[orig_lineno])
+
+        
+        # Run the remapped test on the original code
+        
+    
+
 
 if __name__ == "__main__":
     main()

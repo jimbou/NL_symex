@@ -1,0 +1,8 @@
+Error: ASSERTION FAIL: 0
+File: orig_minimal_prefix.c
+Line: 19
+assembly.ll line: 36
+State: 1
+Stack: 
+	#000000036 in logic_bomb(s=97468377776928) at orig_minimal_prefix.c:19
+	#100000095 in main() at orig_minimal_prefix.c:37

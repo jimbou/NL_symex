@@ -1,0 +1,72 @@
+version: 1
+creator: klee
+pid: 2149
+cmd: /home/klee/tmp_ghost_53f1e334/ghost.bc
+
+
+positions: instr line
+event: Icov : CoveredInstructions
+event: Forks : Forks
+event: Ireal : InstructionRealTimes
+event: Itime : InstructionTimes
+event: I : Instructions
+event: UCdist : MinDistToUncovered
+event: Rtime : ResolveTime
+event: States : States
+event: Iuncov : UncoveredInstructions
+event: Q : Queries
+event: Qiv : QueriesInvalid
+event: Qv : QueriesValid
+event: Qtime : QueryTime
+events: Icov Forks Ireal Itime I UCdist Rtime States Iuncov Q Qiv Qv Qtime 
+ob=assembly.ll
+fl=tmp_ghost_53f1e334/ghost.c
+fn=logic_bomb
+11 10 1 0 0 0 1 0 0 0 0 0 0 0 0 
+12 10 1 0 0 0 1 0 0 0 0 0 0 0 0 
+13 10 1 0 0 0 1 0 0 0 0 0 0 0 0 
+14 10 1 0 0 0 1 0 0 0 0 0 0 0 0 
+15 10 1 0 0 0 1 0 0 0 0 1 0 0 0 
+16 10 1 0 0 0 1 0 0 0 0 0 0 0 0 
+17 11 1 0 0 0 1 0 0 0 0 0 0 0 0 
+18 11 1 0 0 0 1 0 0 0 0 1 0 0 0 
+19 11 1 0 0 0 1 0 0 0 0 0 0 0 0 
+20 11 1 0 0 0 1 0 0 0 0 1 0 0 0 
+21 11 1 0 0 0 1 0 0 0 0 0 0 0 0 
+22 11 1 0 0 0 1 0 0 0 0 0 0 0 0 
+23 11 1 0 0 0 1 0 0 0 0 1 0 0 0 
+24 13 1 0 0 0 1 0 0 0 0 0 0 0 0 
+25 13 1 0 0 0 1 0 0 0 0 1 0 0 0 
+26 13 1 0 0 0 1 0 0 0 0 1 0 0 0 
+27 15 1 0 0 0 1 0 0 0 0 1 0 0 0 
+28 15 1 0 0 0 1 0 0 0 0 0 0 0 0 
+29 10 1 0 0 0 1 0 0 0 0 1 0 0 0 
+30 10 1 0 0 0 1 0 0 0 0 0 0 0 0 
+31 15 1 0 0 0 1 0 0 0 0 0 0 0 0 
+32 15 1 1 0 0 1 0 0 0 0 1 1 0 2873 
+35 16 1 0 0 0 1 0 0 0 0 1 0 0 0 
+36 16 1 0 0 0 1 0 0 0 0 0 0 0 0 
+39 18 1 0 0 0 1 0 0 0 0 1 0 0 0 
+40 18 1 0 0 0 1 0 0 0 0 0 0 0 0 
+43 20 1 0 0 0 2 0 0 0 0 2 0 0 0 
+44 20 1 0 0 0 2 0 0 0 0 0 0 0 0 
+fn=main
+53 22 1 0 0 0 1 0 0 0 0 0 0 0 0 
+54 22 1 0 0 0 1 0 0 0 0 0 0 0 0 
+55 22 1 0 0 0 1 0 0 0 0 1 0 0 0 
+56 23 1 0 0 0 1 0 0 0 0 0 0 0 0 
+57 24 1 0 0 0 1 0 0 0 0 0 0 0 0 
+58 24 1 0 0 0 1 0 0 0 0 2 0 0 0 
+59 26 1 0 0 0 1 0 0 0 0 0 0 0 0 
+60 26 1 0 0 0 1 0 0 0 0 1 0 0 0 
+61 26 1 0 0 0 1 0 0 0 0 0 0 0 0 
+62 26 1 0 0 0 1 0 0 0 0 0 0 0 0 
+63 26 1 0 0 0 1 0 0 0 0 0 0 0 0 
+64 26 1 0 0 0 1 0 0 0 0 0 0 0 0 
+65 26 1 0 0 0 1 0 0 0 0 1 1 0 10405 
+66 27 1 0 0 0 1 0 0 0 0 0 0 0 0 
+67 27 1 0 0 0 1 0 0 0 0 0 0 0 0 
+cfn=logic_bomb
+calls=1 8 10
+67 27 28 1 0 0 30 0 0 0 0 13 1 0 2873 
+68 28 1 0 0 0 2 0 0 0 0 2 1 0 1152 

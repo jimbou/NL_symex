@@ -1,0 +1,79 @@
+version: 1
+creator: klee
+pid: 8717
+cmd: original_prefix.bc
+
+
+positions: instr line
+event: Icov : CoveredInstructions
+event: Forks : Forks
+event: Ireal : InstructionRealTimes
+event: Itime : InstructionTimes
+event: I : Instructions
+event: UCdist : MinDistToUncovered
+event: Rtime : ResolveTime
+event: States : States
+event: Iuncov : UncoveredInstructions
+event: Q : Queries
+event: Qiv : QueriesInvalid
+event: Qv : QueriesValid
+event: Qtime : QueryTime
+events: Icov Forks Ireal Itime I UCdist Rtime States Iuncov Q Qiv Qv Qtime 
+ob=assembly.ll
+fl=orig_minimal_prefix.c
+fn=logic_bomb
+15 11 1 0 0 0 1 0 0 0 0 0 0 0 0 
+16 11 1 0 0 0 1 0 0 0 0 0 0 0 0 
+17 11 1 0 0 0 1 0 0 0 0 0 0 0 0 
+18 11 1 0 0 0 1 0 0 0 0 0 0 0 0 
+19 11 1 0 0 0 1 0 0 0 0 1 0 0 0 
+20 11 1 0 0 0 1 0 0 0 0 0 0 0 0 
+21 12 1 0 0 0 1 0 0 0 0 0 0 0 0 
+22 12 1 0 0 0 1 0 0 0 0 1 0 0 0 
+23 12 1 0 0 0 1 0 0 0 0 0 0 0 0 
+24 12 1 0 0 0 1 0 0 0 0 1 0 0 0 
+25 12 1 0 0 0 1 0 0 0 0 0 0 0 0 
+26 12 1 0 0 0 1 0 0 0 0 0 0 0 0 
+27 12 1 0 0 0 1 0 0 0 0 1 0 0 0 
+28 14 1 0 0 0 1 0 0 0 0 1 0 0 0 
+29 15 1 0 0 0 1 0 0 0 0 1 0 0 0 
+30 16 0 0 0 0 0 1 0 0 1 0 0 0 0 
+31 16 0 0 0 0 0 1 0 0 1 0 0 0 0 
+32 16 0 0 0 0 0 1 0 0 1 0 0 0 0 
+33 16 0 0 0 0 0 1 0 0 1 0 0 0 0 
+34 16 0 0 0 0 0 1 0 0 1 0 0 0 0 
+35 18 0 0 0 0 0 1 0 0 1 0 0 0 0 
+36 18 0 0 0 0 0 1 0 0 1 0 0 0 0 
+37 18 0 0 0 0 0 1 0 0 1 0 0 0 0 
+40 18 0 0 0 0 0 1 0 0 1 0 0 0 0 
+41 18 0 0 0 0 0 1 0 0 1 0 0 0 0 
+42 18 0 0 0 0 0 1 0 0 1 0 0 0 0 
+45 19 0 0 0 0 0 1 0 0 1 0 0 0 0 
+46 19 0 0 0 0 0 1 0 0 1 0 0 0 0 
+49 21 0 0 0 0 0 1 0 0 1 0 0 0 0 
+50 21 0 0 0 0 0 1 0 0 1 0 0 0 0 
+53 23 0 0 0 0 0 1 0 0 1 0 0 0 0 
+54 23 0 0 0 0 0 1 0 0 1 0 0 0 0 
+fn=main
+69 25 1 0 0 0 1 0 0 0 0 0 0 0 0 
+70 25 1 0 0 0 1 0 0 0 0 0 0 0 0 
+71 25 1 0 0 0 1 0 0 0 0 1 0 0 0 
+72 26 1 0 0 0 1 0 0 0 0 0 0 0 0 
+73 27 1 0 0 0 1 0 0 0 0 0 0 0 0 
+74 27 1 0 0 0 1 0 0 0 0 2 0 0 0 
+75 29 1 0 0 0 1 0 0 0 0 0 0 0 0 
+76 29 1 0 0 0 1 0 0 0 0 1 0 0 0 
+77 29 1 0 0 0 1 0 0 0 0 0 0 0 0 
+78 29 1 0 0 0 1 0 0 0 0 0 0 0 0 
+79 29 1 0 0 0 1 0 0 0 0 0 0 0 0 
+80 29 1 0 0 0 1 0 0 0 0 0 0 0 0 
+81 29 1 0 0 0 1 0 0 0 0 1 1 0 18189 
+82 30 1 0 0 0 1 0 0 0 0 0 0 0 0 
+83 30 1 0 0 0 1 0 0 0 0 0 0 0 0 
+cfn=logic_bomb
+calls=1 12 11
+83 30 15 0 0 0 15 0 0 0 0 6 0 0 0 
+84 31 0 0 0 0 0 1 0 0 1 0 0 0 0 
+85 31 0 0 0 0 0 1 0 0 1 0 0 0 0 
+86 31 0 0 0 0 0 1 0 0 1 0 0 0 0 
+87 32 0 0 0 0 0 1 0 0 1 0 0 0 0 

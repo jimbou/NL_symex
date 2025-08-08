@@ -103,31 +103,57 @@ def ensure_log_folder(log_dir: str):
     if os.path.exists(log_dir):
         shutil.rmtree(log_dir)
     os.makedirs(log_dir)
+import os
+import re
 
 def apply_replacement_and_save(original_code: str, replacement_code: str, output_path: str):
-    start_marker = "assume_NL_start;"
-    end_marker = "assume_NL_stop;"
-    
-    start_idx = original_code.find(start_marker)
-    end_idx = original_code.find(end_marker)
+    start_marker = "assume_NL_start"
+    end_marker = "assume_NL_stop"
 
-    if start_idx == -1 or end_idx == -1:
-        raise ValueError("Markers not found in original code.")
+    lines = original_code.splitlines()
+    start_idx = end_idx = -1
 
-    # Remove the entire NL block including the markers
-    before = original_code[:start_idx].rstrip()
-    after = original_code[end_idx + len(end_marker):].lstrip()
+    for i, line in enumerate(lines):
+        if start_marker in line:
+            start_idx = i
+        if end_marker in line:
+            end_idx = i
+        if start_idx != -1 and end_idx != -1:
+            break
 
-    # Remove include "assume.h" if present
-    cleaned = re.sub(r'#include\s+["<]assume\.h[">]\s*', '', before + '\n' + replacement_code + '\n' + after)
-    #if file does not exist create it and write the result there
-    if not os.path.exists(os.path.dirname(output_path)):
-        os.makedirs(os.path.dirname(output_path))
+    if start_idx == -1 or end_idx == -1 or end_idx <= start_idx:
+        raise ValueError("Markers not found or invalid order in original code.")
+
+    # Determine base indentation from the first line inside the block
+    if start_idx + 1 < len(lines):
+        match = re.match(r'^(\s*)', lines[start_idx + 1])
+        base_indent = match.group(1) if match else ''
+    else:
+        base_indent = ''
+
+    # Re-indent replacement code
+    replacement_lines = [
+        base_indent + line.strip() for line in replacement_code.strip().splitlines()
+    ]
+
+    # Build new lines
+    new_lines = []
+    new_lines.extend(lines[:start_idx])
+    new_lines.append(base_indent + "// #assume_NL_start();")
+    new_lines.extend(replacement_lines)
+    new_lines.append(base_indent + "// #assume_NL_stop();")
+    new_lines.extend(lines[end_idx + 1:])
+
+    # Remove include of assume.h
+    cleaned = "\n".join(new_lines)
+    cleaned = re.sub(r'#include\s+["<]assume\.h[">]\s*\n?', '', cleaned)
+
+    os.makedirs(os.path.dirname(output_path), exist_ok=True)
     with open(output_path, 'w') as f:
-        f.write(cleaned)
+        f.write(cleaned + "\n")
 
     print(f"[✓] Saved modified file to {output_path}")
-
+    return cleaned
 
 
 def main():

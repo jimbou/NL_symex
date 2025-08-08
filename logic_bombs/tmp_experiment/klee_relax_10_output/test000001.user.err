@@ -1,0 +1,8 @@
+Error: invalid klee_assume call (provably false)
+File: tmp_experiment/orig_minimal_prefix_relaxed_10.c
+Line: 18
+assembly.ll line: 48
+State: 1
+Stack: 
+	#000000048 in logic_bomb(s=98174607655952) at tmp_experiment/orig_minimal_prefix_relaxed_10.c:18
+	#100000104 in main() at tmp_experiment/orig_minimal_prefix_relaxed_10.c:39

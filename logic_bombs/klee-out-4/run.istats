@@ -1,0 +1,64 @@
+version: 1
+creator: klee
+pid: 9790
+cmd: original_prefix.bc
+
+
+positions: instr line
+event: Icov : CoveredInstructions
+event: Forks : Forks
+event: Ireal : InstructionRealTimes
+event: Itime : InstructionTimes
+event: I : Instructions
+event: UCdist : MinDistToUncovered
+event: Rtime : ResolveTime
+event: States : States
+event: Iuncov : UncoveredInstructions
+event: Q : Queries
+event: Qiv : QueriesInvalid
+event: Qv : QueriesValid
+event: Qtime : QueryTime
+events: Icov Forks Ireal Itime I UCdist Rtime States Iuncov Q Qiv Qv Qtime 
+ob=assembly.ll
+fl=orig_minimal_prefix.c
+fn=logic_bomb
+15 12 1 0 0 0 1 0 0 0 0 0 0 0 0 
+16 12 1 0 0 0 1 0 0 0 0 0 0 0 0 
+17 12 1 0 0 0 1 0 0 0 0 0 0 0 0 
+18 12 1 0 0 0 1 0 0 0 0 1 0 0 0 
+19 12 1 0 0 0 1 0 0 0 0 0 0 0 0 
+20 13 1 0 0 0 1 0 0 0 0 0 0 0 0 
+21 13 1 0 0 0 1 0 0 0 0 1 0 0 0 
+22 13 1 0 0 0 1 0 0 0 0 0 0 0 0 
+23 13 1 0 0 0 1 0 0 0 0 1 0 0 0 
+24 13 1 0 0 0 1 0 0 0 0 0 0 0 0 
+25 13 1 0 0 0 1 0 0 0 0 0 0 0 0 
+26 13 1 0 0 0 1 0 0 0 0 1 0 0 0 
+27 15 1 0 0 0 1 0 0 0 0 1 0 0 0 
+28 16 1 0 0 0 1 0 0 0 0 1 0 0 0 
+29 16 0 0 0 0 0 0 0 0 0 0 0 0 0 
+fn=main
+41 26 1 0 0 0 1 0 0 0 0 0 0 0 0 
+42 26 1 0 0 0 1 0 0 0 0 0 0 0 0 
+43 26 1 0 0 0 1 0 0 0 0 1 0 0 0 
+44 27 1 0 0 0 1 0 0 0 0 0 0 0 0 
+45 28 1 0 0 0 1 0 0 0 0 0 0 0 0 
+46 28 1 0 0 0 1 0 0 0 0 2 0 0 0 
+47 30 1 0 0 0 1 0 0 0 0 0 0 0 0 
+48 30 1 0 0 0 1 0 0 0 0 1 0 0 0 
+49 30 1 0 0 0 1 0 0 0 0 0 0 0 0 
+50 30 1 0 0 0 1 0 0 0 0 0 0 0 0 
+51 30 1 0 0 0 1 0 0 0 0 0 0 0 0 
+52 30 1 0 0 0 1 0 0 0 0 0 0 0 0 
+53 30 1 0 0 0 1 0 0 0 0 1 1 0 10176 
+54 31 1 0 0 0 1 0 0 0 0 0 0 0 0 
+55 31 1 0 0 0 1 0 0 0 0 0 0 0 0 
+cfn=logic_bomb
+calls=1 12 12
+55 31 14 0 0 0 14 0 0 0 0 6 0 0 0 
+56 32 0 0 0 0 0 1 0 0 1 0 0 0 0 
+57 32 0 0 0 0 0 1 0 0 1 0 0 0 0 
+58 32 0 0 0 0 0 1 0 0 1 0 0 0 0 
+61 32 0 0 0 0 0 1 0 0 1 0 0 0 0 
+62 32 0 0 0 0 0 0 0 0 0 0 0 0 0 
+65 33 0 0 0 0 0 1 0 0 1 0 0 0 0 

@@ -73,8 +73,8 @@ def create_log_folders_and_models(log_folder,model_name):
     return model_template, log_folder_template, model_translated, log_folder_translated, model_universal, log_folder_universal, model_feedback, log_folder_feedback
 
 def extract_blocks(c_code: str):
-    start_marker = "assume_NL_start;"
-    end_marker = "assume_NL_stop;"
+    start_marker = "assume_NL_start();"
+    end_marker = "assume_NL_stop();"
     start_marker2 = "assume_NL_start"
     end_marker2 = "assume_NL_stop"
     
@@ -86,6 +86,9 @@ def extract_blocks(c_code: str):
     if end_idx == -1:
         end_idx = c_code.find(end_marker2)
     if start_idx == -1 or end_idx == -1 or start_idx > end_idx:
+        print(f"[ERROR] Could not find NL markers in the C code.{c_code}")
+        print(f"Start marker: {start_marker}, End marker: {end_marker}")
+        print(f"Start marker2: {start_marker2}, End marker2: {end_marker2}")
         raise ValueError("Missing NL markers")
 
     prefix = c_code[:start_idx].strip()
@@ -139,9 +142,9 @@ def apply_replacement_and_save(original_code: str, replacement_code: str, output
     # Build new lines
     new_lines = []
     new_lines.extend(lines[:start_idx])
-    new_lines.append(base_indent + "// #assume_NL_start();")
+    new_lines.append(base_indent + "// assume_NL_start();")
     new_lines.extend(replacement_lines)
-    new_lines.append(base_indent + "// #assume_NL_stop();")
+    new_lines.append(base_indent + "// assume_NL_stop();")
     new_lines.extend(lines[end_idx + 1:])
 
     # Remove include of assume.h
@@ -155,6 +158,64 @@ def apply_replacement_and_save(original_code: str, replacement_code: str, output
     print(f"[✓] Saved modified file to {output_path}")
     return cleaned
 
+def get_translated_code(model_name, log_folder, c_script_path):
+    """
+    Translates the C code using the specified model and saves the result.
+    """
+    #check that the log folder exists
+    if not os.path.exists(log_folder):
+        os.makedirs(log_folder)
+        print(f"[INFO] Created log folder: {log_folder}")
+    else:
+        print(f"[INFO] Using existing log folder: {log_folder}")
+    
+    #if the c_script_path is not a file, raise an error
+    if not os.path.isfile(c_script_path):
+        raise FileNotFoundError(f"C file not found: {c_script_path}")
+    with open(c_script_path, 'r') as f:
+        c_code = f.read()
+
+    # Remove #include "assume.h" if it exists
+    c_code = c_code.replace('#include "assume.h"', '').strip()
+    c_code = c_code.replace('#include "../../assume.h"', '').strip()
+    c_code = c_code.replace('#include "../assume.h"', '').strip()
+
+    prefix, nl_code, _ = extract_blocks(c_code)
+    prefix_compilable = make_prefix_compilable(prefix)
+
+    with open(os.path.join(log_folder, "prefix.c"), 'w') as f:
+        f.write(prefix_compilable)
+
+    with open(os.path.join(log_folder, "nl_block.c"), 'w') as f:
+        f.write(nl_code)
+
+    print(f"[✓] Written prefix.c and nl_block.c to {log_folder}/")
+    #replace the line with assume_Nl_start rith a comment //assume_NL_start();
+    #the line m,ight contain more stuff bwfore and after
+    # Replace any line containing 'assume_NL_start' with '// assume_NL_start();'
+    c_code_lines = c_code.splitlines()
+    replaced_lines = []
+    for line in c_code_lines:
+        if 'assume_NL_start' in line:
+            #keep the indentation and replace the line with a comment
+            #collect the spaces in the beginning of the line
+            indent = re.match(r'^\s*', line).group(0)
+            replaced_lines.append(f"{indent}// assume_NL_start();")
+        elif 'assume_NL_stop' in line:
+            #keep the indentation and replace the line with a comment
+            indent = re.match(r'^\s*', line).group(0)
+            replaced_lines.append(f"{indent}// assume_NL_stop();")
+            replaced_lines.append('// assume_NL_start();')
+        else:
+            replaced_lines.append(line)
+    c_code = '\n'.join(replaced_lines)
+    model_universal= create_model_log_based_name(model_name, log_folder, "universal")
+    universal_transformed_code = universal_prompt(model_universal, c_code, nl_code)
+    print(f"[✓] Transformed code using universal model: {universal_transformed_code}")
+    translated_path = os.path.join(log_folder, "universal_transformed_code.c")
+    with open(translated_path, 'w') as f:
+        f.write(universal_transformed_code)
+    return translated_path, prefix, nl_code
 
 def main():
     parser = argparse.ArgumentParser(description="Extract NL code block and generate minimal compilable replacement.")

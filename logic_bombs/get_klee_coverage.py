@@ -227,35 +227,62 @@ def get_uncovered(c_file_path):
         pass
     return uncovered
 
+import argparse
 def main():
     # test_names=find_tests_covering_line("/home/jim/NL_constraints/logic_bombs/tmp_ghost_ffa672dd/ghost.c", 15, "/home/jim/NL_constraints/logic_bombs/tmp_ghost_ffa672dd/ghost_out-0")
     # print(test_names)
-    if len(sys.argv) < 2 or len(sys.argv) > 3:
-        print("Usage: python run_klee_metrics.py <path_to_c_file> --optional_klee run dir")
+    #make it accept 3 arguments
+    #1. c_file_path
+    #2. (optional) klee_run_dir
+    #3. (optional) rerun_klee (default True)
+    if len(sys.argv) < 2:
+        print("Usage: python get_klee_coverage.py <c_file_path> [<klee_run_dir>] [<rerun_klee>]")
         return
+    parser = argparse.ArgumentParser(description="Run KLEE coverage analysis.")
+    parser.add_argument("--c_file_path", help="Path to the C file to analyze")
+    parser.add_argument("--klee_run_dir", required=False, help="Path to the KLEE run directory (optional)")
+    parser.add_argument("--rerun_klee", required=False, action="store_true", help="Whether to rerun KLEE (default: True)")
+    args = parser.parse_args()
+
     
-    if len(sys.argv) == 3 :
-        rerun_klee = False
-        klee_run_dir = sys.argv[2]
-        if not os.path.isdir(klee_run_dir):
-            print(f"Error: KLEE run directory not found: {klee_run_dir}")
-            return
-    
-    else:
-        rerun_klee=True
-    c_file_path = sys.argv[1]
+
+    c_file_path = args.c_file_path
     if not os.path.isfile(c_file_path):
         print(f"Error: File not found: {c_file_path}")
         return
 
+    if args.rerun_klee:
+        if args.rerun_klee in ['yes', 'true', '1', 'on', 'y', 't']:
+            rerun_klee = True
+        else:
+            rerun_klee = False
+    else:
+        rerun_klee = True
+
     try:
         if rerun_klee:
+            if args.klee_run_dir:
+                klee_run_dir = args.klee_run_dir
+            else:
+                klee_run_dir = get_next_output_dir()
+            if os.path.exists(klee_run_dir):
+                print(f"KLEE run directory {klee_run_dir} already exists, we remove it first")
+                subprocess.run(["rm", "-rf", klee_run_dir], check=True)
             # Compile to .bc
             bc_file_path = compile_to_bc(c_file_path)
             # Run KLEE
-            output_dir = get_next_output_dir()
+            output_dir = klee_run_dir
             run_klee(bc_file_path, output_dir)
         else:
+            if args.klee_run_dir:
+                klee_run_dir = args.klee_run_dir
+            else:
+                print("No KLEE run directory provided, exiting")
+                #throw error
+                return -1
+            if not os.path.exists(klee_run_dir):
+                print(f"KLEE run directory {klee_run_dir} does not exist, exiting")
+                return -1
             # Use the provided KLEE run directory
             output_dir = klee_run_dir
         

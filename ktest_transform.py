@@ -146,6 +146,82 @@ def read_ktest_file(file_path):
 #     display_dataframe_to_user(name, df)
 #     return df
 
+ktest_input_mapping_prompt_v2 ="""
+You are a C program transformation assistant. Your job is to remap KLEE test cases that works on a
+TRANSFORMED (ghost) program so that it triggers the SAME post-NL behavior on the ORIGINAL program.
+
+## Setting
+
+- ORIGINAL code has three regions:
+  PRE (before `//assume_NL_start();`), NL (between start/stop), and POST (after `//assume_NL_stop();`).
+- GHOST code replaces only the NL region with a KLEE-friendly translation. PRE and POST should be identical.
+
+## What you MUST produce
+
+Return ONLY a Python function:
+
+```python
+def remap_testcase(inputs: dict[str, list[int]]) -> dict[str, list[int]]:
+    ...
+The function must be self-contained and do the following:
+
+Parse the ghost inputs (byte lists) into Python values with the correct types and endianness.
+
+Re-implement the minimal PRE+GHOST transfer in Python needed to compute the values of the CRITICAL variables
+immediately after assume_NL_stop(); (i.e., the post-NL state that drives POST control flow).
+
+Derive this from the provided C code snippets (you may write a compact Python translation of only the relevant expressions).
+
+If types were changed in GHOST (e.g., float->int), reflect that during this forward computation.
+
+Construct a best-effort inverse of ORIGINAL NL (NL^(-1)) and then of PRE (PRE^(-1)) so that, when ORIGINAL PRE+NL run,
+the same post-NL values are produced (within small tolerance).
+
+If exact algebraic inversion is not possible, implement a numerically robust approximation (e.g., simple bounded search,
+iterative refinement, clamping).
+
+Re-encode the resulting ORIGINAL input values back to byte lists (preserving sizes/endianness) and return a dict with
+the same keys as the input.
+
+Only modify inputs that affect PRE or NL. Pass through unrelated inputs unchanged.
+
+Requirements & conventions
+Include any imports you need (e.g., struct, math).
+
+Preserve byte sizes of symbolic objects. Use IEEE-754 for floats/doubles.
+
+Be explicit about endianness you assume; default to little-endian unless the code clearly implies otherwise.
+
+Clearly comment any approximations or bounded searches (ranges, steps).
+
+Reason conservatively: only implement PRE/GHOST computations for the minimal expressions that influence the variables
+used by POST (branches, returns) after assume_NL_stop();.
+So the remap function pipeline should be : original_test ->PRE -> GHOST -> NL^(-1) -> PRE^(-1) -> remapped_test
+
+### Original Code:
+
+```c
+{FULL_ORIGINAL_CODE}
+```
+
+---
+
+### Transformed Region:
+
+```c
+{TRANSLATED_CODE}
+```
+
+---
+
+### ExampleG HOST KTEST (dict of input bytes). TThis is one of the test cases that was run on the ghost code. Ideally the remap function should be able to handle all the test cases of this form.
+
+
+
+{TESTCASE_AS_DICT}
+
+"""
+
 ktest_input_mapping_prompt ="""
 You are a C program transformation assistant. Your task is to help map symbolic inputs from a **transformed** C program (used with KLEE) back to the **original** C program, so that **the same execution path** is triggered.
 
@@ -262,7 +338,7 @@ def build_ktest_mapping_prompt(original_code: str, transformed_code: str, ktest_
     Constructs a prompt for the LLM to determine whether remapping of KLEE test inputs is needed,
     and if so, to return a Python function to do the remapping.
     """
-    return ktest_input_mapping_prompt.format(
+    return ktest_input_mapping_prompt_v2.format(
         FULL_ORIGINAL_CODE=original_code,
         TRANSLATED_CODE=transformed_code,
         TESTCASE_AS_DICT=str(ktest_inputs)
@@ -313,12 +389,15 @@ def save_remap_function(code: str, filepath: str = "remap_testcase.py"):
     with open(filepath, "w") as f:
         f.write(code)
 
-def apply_remap_on_ktests(model, original_code, transformed_code, input_dir, remap_path=None):
+def apply_remap_on_ktests(model, original_code, transformed_code, input_dir, remap_path=None, ktest_path=None):
 
 
     remap_code_path = os.path.join(input_dir, "remap_testcase.py")
-    
-    first_ktest = glob.glob(os.path.join(input_dir, "*.ktest"))[0]
+    if ktest_path and os.path.exists(ktest_path):
+        print(f"[INFO] Using provided ktest file: {ktest_path}")
+        first_ktest = ktest_path
+    else:
+        first_ktest = glob.glob(os.path.join(input_dir, "*.ktest"))[0]
     print(f"[INFO] Using ktest file: {first_ktest}")
     ktest_info = read_ktest_structured(first_ktest)
     ktest_str= format_ktest_as_string(ktest_info)

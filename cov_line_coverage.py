@@ -13,7 +13,7 @@ def docker_copy_to(docker_name, local_path, container_path):
 def get_uncovered_lines_in_docker(docker_name, ktest_dir, c_file_path):
     c_basename = os.path.basename(c_file_path)
     c_name = os.path.splitext(c_basename)[0]
-    coverage_dir = os.path.normpath(f"{ktest_dir.rstrip('/')}/../coverage_dir")
+    coverage_dir = os.path.normpath(f"{ktest_dir.rstrip('/')}/../coverage_temp_dir")
 
     replay_exe = f"{coverage_dir}/ghost_coverage"
     profdata = f"{coverage_dir}/ghost.profdata"
@@ -37,7 +37,7 @@ def get_uncovered_lines_in_docker(docker_name, ktest_dir, c_file_path):
     )
 
     ktest_files = list_ktests.stdout.strip().splitlines()
-
+    print(f"[INFO] Found {len(ktest_files)} .ktest files in {ktest_dir} inside container.")
     # Copy each one inside the container (from ktest_dir to coverage_dir)
     for ktest_path in ktest_files:
         ktest_base = os.path.basename(ktest_path)
@@ -110,7 +110,7 @@ def get_uncovered_lines_in_docker(docker_name, ktest_dir, c_file_path):
         print(f"Line {lineno}: {content.strip()} (count: {count_str})")
         if count_str.strip() == "":
             #this is a comment or include line
-            # print(f"Skipping line {lineno} due to empty count")
+            print(f"Skipping line {lineno} due to empty count")
             continue
         if count_str == "0" or count_str.startswith("#####"):
             stripped = content.strip()
@@ -121,6 +121,7 @@ def get_uncovered_lines_in_docker(docker_name, ktest_dir, c_file_path):
             if stripped in ("{", "}"):
                 continue
             uncovered.append((lineno, stripped))
+    # print(f"Uncovered lines in LLVM coverage:\n{uncovered}")
 
     return uncovered
 

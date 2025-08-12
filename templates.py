@@ -1066,25 +1066,28 @@ And the **usual remedies** in KLEE‐friendly code:
 ---
 
 **Now**:  
-1. Here’s your original C snippet which we attempted to analyze with klee:
+1. Here’s your original C snippet which we attempted to analyze with klee. The difficult part is between the comments //assume_NL_start(); and //assume_NL_stop();
 ```
 
 {CODE}
 
 ```
 
-and more specifically here is the part of the code you need to rewrite because klee could not handle it well:
+and more specifically here is the part of the code you need to rewrite because klee could not handle it well(the part that was between the comments //assume_NL_start(); and //assume_NL_stop();):
 ```
 {NL_CODE}
 ```
 
 2. **Rewrite only the problematic parts** using the above techniques so that:
    - Functionality (outputs, branches) is preserved.  
-   - It compiles under standard C + KLEE.  
+   - It compiles under standard C + KLEE. 
+   - add any potential includes that are needed to make the code compile. 
+   - if we have floating-point numbers, try to translate them to integer operations if the logic permits.
    - If full generality is impossible, restrict via `klee_assume` so that you can return a functionally equivalent version at least for a subset of inputs.
 
 3. For any external library or crypto call, **provide a stub implementation**—either real code or a comment block with function signature and intended behavior.
 
+Do not change the rest of the code unless it is absolutely necessary to make the rewritten part work. Keep the comments //assume_NL_start(); and //assume_NL_stop(); intact so that we can see where the changes were made.
 ## Now rewrite the problematic part(s) of the code and return the transformed version that is compilable and runnable in klee in the following format:
 ### Transformed C Code:
 Start_of_transformed_code

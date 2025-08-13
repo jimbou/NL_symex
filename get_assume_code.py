@@ -20,7 +20,7 @@ To assist symbolic execution, we annotate parts of the code that are difficult f
 - `assume_NL_start();` placed **before** a region of difficult code
 - `assume_NL_stop();`  placed **after** the region
 
-This region is later translated or abstracted into simpler, more tractable code. This difficult code often is usually before the uncovered lines because the inability of klee to reason about it leads to the uncovered lines.
+This region is later translated or abstracted into simpler, more tractable code. This difficult code is usually before the uncovered lines because the inability of klee to reason about it leads to the uncovered lines. SO avoid placing the markers so uncovered lines are inside the region or before the assume_NL_start in the control flow.
 
 Symbolic execution engines typically struggle with the following kinds of code constructs:
 

@@ -13,7 +13,7 @@ from reach_Nl_start import check_if_ktest_reaches_Nl_start
 
 
 
-def prepare_and_remap_ktests(model, klee_docker_ghost, local_log_folder, docker_name, original_code_path, transformed_code_path, remap_path=None):
+def prepare_and_remap_ktests(model, klee_docker_ghost, local_log_folder, docker_name, original_code_path, transformed_code_path, ktest_path=None, remap_path=None):
     # Step 1: Copy all ktests from container to local
     
     local_ktest_dir = os.path.join(local_log_folder, "local_ktests")
@@ -38,11 +38,9 @@ def prepare_and_remap_ktests(model, klee_docker_ghost, local_log_folder, docker_
     print(f"[INFO] Ktest directory: {ktest_dir}")
 
     # Step 2: Remap ktests (generates _updated.ktest files)
-    if remap_path:
-        print(f"[INFO] Using remap path: {remap_path}")
-        apply_remap_on_ktests(model, original_code, transformed_code, ktest_dir, remap_path)
-    else:
-        apply_remap_on_ktests(model, original_code, transformed_code, ktest_dir)
+    
+    apply_remap_on_ktests(model, original_code, transformed_code, ktest_dir, remap_path=remap_path, ktest_path=ktest_path)
+   
 
     # Step 3: Copy original and remapped tests back to container
     print("[INFO] Copying ktest files back into container...")
@@ -399,6 +397,37 @@ def main():
     # Optional user-provided remap path
     remap_path = getattr(args, "remap_path", None)
 
+    per_test_cov_dict = get_per_test_coverage(docker_name, coverage_dir_klee_ghost, translated_code_path_inside_container)
+    print(f"[INFO] Per-test coverage dict (ghost ktests on ghost code): {per_test_cov_dict}")
+
+    # For every line in combined_uncovered_REMAPPED, find its remapped line in ghost code,
+    # then find the ktest that covers it in per_test_cov_dict.
+    # Output: {orig_line: ktest_name or None}
+    line_to_ktest_orig = {}
+    for orig_ln, _ in combined_uncovered:
+        ghost_ln = map_orig_to_ghost.get(orig_ln)
+        if ghost_ln is None:
+            line_to_ktest_orig[orig_ln] = None
+            continue
+        found_ktest = None
+        for ktest_name, covered_lines in per_test_cov_dict.items():
+            if ghost_ln in covered_lines:
+                found_ktest = ktest_name
+                break
+        line_to_ktest_orig[orig_ln] = found_ktest
+
+    # From the translated_c_path_inside_container and the orig_inside_container,
+    # rename them in the same folder (inside the container) to orig.c and ghost.c
+    print(f"[INFO] Mapping of uncovered original lines to ktest covering their ghost-mapped line:\n{line_to_ktest_orig}")
+
+    #find one of the ktests that appear in line_to_ktest_orig
+    first_ktest = next((ktest for ktest in line_to_ktest_orig.values() if ktest is not None), None)
+    if first_ktest is None:
+        print("[WARN] No ktests found that cover any uncovered lines in ghost code. Exiting.")
+        
+    else:
+        ktest_promising_path= os.path.join(coverage_dir_klee_ghost, first_ktest)
+        
     # Prepare + remap ghost ktests, and push remapped back into the container
     ktests_local_dir = prepare_and_remap_ktests(
         model=model_remap,
@@ -407,7 +436,8 @@ def main():
         docker_name=docker_name,
         original_code_path=c_file_path_marked,            # local original code (for prompt)
         transformed_code_path=translated_code_path,       # local translated code (for prompt)
-        remap_path=remap_path
+        remap_path=remap_path,
+        ktest_path=ktest_promising_path  # local path to a promising ktest
     )
 
     print(f"[INFO] Remapped ktests staged at: {ktests_local_dir}")
@@ -439,12 +469,6 @@ def main():
      
      #for that ktest see if it reaches the assume_NL_start or not using get_ktests_that_do_not_reach_nl_start from pipeline
 
-    per_test_cov_dict = get_per_test_coverage(docker_name, coverage_dir_klee_ghost, translated_code_path_inside_container)
-    print(f"[INFO] Per-test coverage dict (ghost ktests on ghost code): {per_test_cov_dict}")
-
-    # For every line in combined_uncovered_REMAPPED, find its remapped line in ghost code,
-    # then find the ktest that covers it in per_test_cov_dict.
-    # Output: {orig_line: ktest_name or None}
     line_to_ktest = {}
     for orig_ln, _ in combined_uncovered_REMAPPED:
         ghost_ln = map_orig_to_ghost.get(orig_ln)
@@ -457,10 +481,6 @@ def main():
                 found_ktest = ktest_name
                 break
         line_to_ktest[orig_ln] = found_ktest
-
-    # From the translated_c_path_inside_container and the orig_inside_container,
-    # rename them in the same folder (inside the container) to orig.c and ghost.c
-    print(f"[INFO] Mapping of uncovered original lines to ktest covering their ghost-mapped line:\n{line_to_ktest}")
     
     docker_bash(
         docker_name,

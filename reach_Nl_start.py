@@ -1,6 +1,50 @@
 import subprocess
 import os
 
+
+def check_if_ktest_reaches_Nl_start(docker_name: str, exe_path: str, ktest_path: str) -> tuple[bool, str]:
+    """
+    Runs `exe_path` inside `docker_name` with the single `ktest_path` (both inside the container).
+    Returns (does_not_reach, trace_text).
+
+    does_not_reach == True  => "Reached assume NL start" was NOT printed.
+    does_not_reach == False => it DID reach (the marker was found).
+    """
+    # Where to drop the trace; use the executable's directory so we always have write access there
+    exe_dir = os.path.dirname(exe_path) if os.path.dirname(exe_path) else "."
+    trace_path = os.path.join(exe_dir, "trace_output.txt")
+
+    # Clean any previous trace
+    subprocess.run(
+        ["docker", "exec", docker_name, "bash", "-lc", f"rm -f {trace_path}"],
+        check=True
+    )
+
+    # Replay
+    cmd = (
+        f"export LD_LIBRARY_PATH=/tmp/klee_build130stp_z3/lib:$LD_LIBRARY_PATH && "
+        f"KTEST_FILE='{ktest_path}' '{exe_path}' > '{trace_path}' 2>/dev/null"
+    )
+    try:
+        subprocess.run(["docker", "exec", docker_name, "bash", "-lc", cmd], check=True)
+    except subprocess.CalledProcessError as e:
+        # If the program exits non-zero it's still okay; we only care about the trace text
+        # Re-raise if you want strict behavior instead.
+        pass
+
+    # Read the trace
+    read_output = subprocess.run(
+        ["docker", "exec", docker_name, "bash", "-lc", f"cat '{trace_path}' || true"],
+        capture_output=True,
+        text=True,
+        check=True
+    )
+    out = read_output.stdout
+
+    reached = "Reached assume NL start" in out
+    return (reached, out)
+
+
 def get_ktests_that_do_not_reach_nl_start(docker_name, exe_path, ktest_dir):
     print(f"Getting .ktest files that do NOT reach NL start in {docker_name}...")
     print(f"Executable path inside container: {exe_path}")

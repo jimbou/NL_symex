@@ -125,7 +125,7 @@ def get_uncovered_lines_in_docker(docker_name, ktest_dir, c_file_path):
 
     return uncovered
 
-def get_covered_lines_for_ktest(docker_name, exe_path, c_file_path, ktest_path):
+def get_covered_lines_for_ktest(docker_name, c_file_path, ktest_path):
     """
     Runs one .ktest file on the given executable inside Docker and returns
     a set of covered line numbers for the given C source file.

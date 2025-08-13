@@ -188,7 +188,8 @@ def run_preprocessing(
             "uncovered_llvm": uncovered_llvm_list
         },
         "dir_of_coverage": tmp_dir,
-        "log_inside_container": container_log
+        "log_inside_container": container_log,
+        "dir_of_coverage_inside_docker": klee_run_dir
     }
 
 

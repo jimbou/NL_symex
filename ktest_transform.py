@@ -356,6 +356,104 @@ def build_ktest_mapping_prompt_simple(original_code: str, minimal_code: str, kte
     )
 
 import re
+import re
+import re
+
+def extract_remap_function_complex(response: str):
+    """
+    Prefer fenced ```python ... ``` blocks. If found, try to extract the
+    `def remap_testcase(...)` function from inside; if not present, return the
+    entire code block. Then try generic ``` ... ``` blocks. Finally, fall back
+    to plaintext scanning.
+    Returns None if nothing plausible is found or 'NO_TRANSLATION_NEEDED' appears.
+    """
+    if "NO_TRANSLATION_NEEDED" in response:
+        return None
+
+    # --- 1) Strictly prefer ```python ... ``` blocks ---
+    py_blocks = re.findall(r"```python\s*\n(.*?)```", response, flags=re.DOTALL | re.IGNORECASE)
+    for block in py_blocks:
+        func = _extract_function_from_block(block, "remap_testcase")
+        if func:
+            return func
+        # If no explicit function, return the whole python block
+        return block.strip()
+
+    # --- 2) Fallback: any ``` ... ``` block ---
+    any_blocks = re.findall(r"```\s*\n(.*?)```", response, flags=re.DOTALL)
+    for block in any_blocks:
+        func = _extract_function_from_block(block, "remap_testcase")
+        if func:
+            return func
+        # If no explicit function, return the whole block
+        return block.strip()
+
+    # --- 3) Fallback: plaintext def scanning ---
+    return _extract_function_from_plaintext(response, "remap_testcase")
+
+
+def _extract_function_from_block(block: str, func_name: str) -> str | None:
+    """
+    From a code block (no fences), extract `def func_name(...):` and its body by indentation.
+    Also include any import lines that appear in the block.
+    """
+    lines = block.splitlines()
+    # collect imports found anywhere in block (kept above the function)
+    imports = [ln for ln in lines if ln.strip().startswith("import ") or ln.strip().startswith("from ")]
+
+    # find the function def line
+    for i, ln in enumerate(lines):
+        m = re.match(rf"^(\s*)def\s+{re.escape(func_name)}\s*\(.*?\):\s*$", ln)
+        if not m:
+            continue
+        def_indent = m.group(1)
+        body = [ln]
+        # capture indented body lines until dedent to def level
+        for ln2 in lines[i+1:]:
+            if ln2.strip() == "":
+                body.append(ln2)
+                continue
+            indent2 = re.match(r"^(\s*)", ln2).group(1)
+            if len(indent2) <= len(def_indent) and not ln2.strip().startswith("#"):
+                break
+            body.append(ln2)
+
+        # stitch imports + function
+        prelude = "\n".join(dict.fromkeys(imports)).strip()  # dedupe while keeping order
+        func_text = "\n".join(body).rstrip()
+        return (prelude + "\n\n" if prelude else "") + func_text
+
+    return None
+
+
+def _extract_function_from_plaintext(text: str, func_name: str) -> str | None:
+    """
+    Last-resort plaintext extractor: grabs imports anywhere and then the function
+    until dedent/new section.
+    """
+    lines = text.splitlines()
+    imports = [ln for ln in lines if ln.strip().startswith("import ") or ln.strip().startswith("from ")]
+
+    def_idx = None
+    def_indent = 0
+    for i, ln in enumerate(lines):
+        m = re.match(rf"^(\s*)def\s+{re.escape(func_name)}\s*\(.*?\):\s*$", ln)
+        if m:
+            def_idx = i
+            def_indent = len(m.group(1))
+            break
+    if def_idx is None:
+        return None
+
+    body = [lines[def_idx]]
+    for ln in lines[def_idx + 1:]:
+        if ln.strip() and len(re.match(r"^(\s*)", ln).group(1)) <= def_indent:
+            break
+        body.append(ln)
+
+    prelude = "\n".join(dict.fromkeys(imports)).strip()
+    func_text = "\n".join(body).rstrip()
+    return (prelude + "\n\n" if prelude else "") + func_text if "def " in func_text else None
 
 def extract_remap_function(response: str) -> str | None:
     """
@@ -422,7 +520,7 @@ def apply_remap_on_ktests(model, original_code, transformed_code, input_dir, rem
             ktest_inputs=ktest_str
         )
         resp= model.query(prompt)
-        remap_code= extract_remap_function(resp)
+        remap_code= extract_remap_function_complex(resp)
     if remap_code is None:
         print("No translation needed. Skipping transformation.")
         return
@@ -468,7 +566,7 @@ def apply_remap_on_single_ktest(model, original_code, minimal_code, input_dir, k
             ktest_inputs=ktest_str
         )
         resp = model.query(prompt)
-        remap_code = extract_remap_function(resp)
+        remap_code = extract_remap_function_complex(resp)
 
         if remap_code is None:
             print("No remapping code extracted. Skipping remap.")
